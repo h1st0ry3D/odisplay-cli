@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"unicode"
@@ -64,14 +65,74 @@ type Input struct {
 
 // Config is the whole file.
 type Config struct {
-	Version int     `json:"version"`
-	Display int     `json:"display"`
-	Inputs  []Input `json:"inputs"`
+	Version int `json:"version"`
+	Display int `json:"display"`
+	// Displays overrides Display for a named platform, keyed the way Go names
+	// it: "linux", "darwin".
+	//
+	// It exists because the two programs number displays independently, and
+	// the same monitor driven from a Linux laptop and a Mac is display 1 on
+	// one and something else on the other. Sharing one settings file across
+	// both is otherwise a way to point a switch at the wrong screen.
+	Displays map[string]int `json:"displays,omitempty"`
+	Inputs   []Input        `json:"inputs"`
 	// Devices are the names Solaar needs. macOS moves every paired device in
 	// one call and ignores this, so it is only read by the Solaar backend.
 	Devices []string `json:"devices,omitempty"`
 
 	path string
+}
+
+// platforms are the keys accepted in Displays. A closed set on purpose: a
+// typo like "macos" would otherwise be ignored in silence, leaving the wrong
+// display number in charge, and a wrong display number is a switch that does
+// nothing while the keyboard still moves.
+var platforms = []string{"linux", "darwin"}
+
+// ValidPlatform reports whether a name is one Displays may be keyed by.
+func ValidPlatform(name string) bool {
+	for _, p := range platforms {
+		if p == name {
+			return true
+		}
+	}
+	return false
+}
+
+// Platforms returns the accepted keys, for a message that says what to type.
+func Platforms() []string { return append([]string(nil), platforms...) }
+
+// DisplayNumber is the display to use here, which is the platform's own entry
+// if it has one and the shared default otherwise.
+func (c Config) DisplayNumber() int {
+	return resolveDisplay(c.Display, c.Displays, runtime.GOOS)
+}
+
+// resolveDisplay takes the platform as an argument rather than reading it, so
+// one test can check what the other machine will do. A resolution rule that can
+// only ever be checked for the platform it runs on is a rule nobody can check.
+func resolveDisplay(fallback int, per map[string]int, goos string) int {
+	if n, ok := per[goos]; ok && n >= 1 {
+		return n
+	}
+	return fallback
+}
+
+// SetDisplayNumber records the number for the platform this is running on, so
+// running `set display` on one machine cannot change the other one's. An entry
+// that matches the shared default is dropped, because a file carrying both is
+// strictly harder to read than one carrying either.
+func (c *Config) SetDisplayNumber(n int) {
+	if c.Displays == nil {
+		c.Displays = map[string]int{}
+	}
+	c.Displays[runtime.GOOS] = n
+	if n == c.Display {
+		delete(c.Displays, runtime.GOOS)
+		if len(c.Displays) == 0 {
+			c.Displays = nil
+		}
+	}
 }
 
 // Default is the setup this tool was built for: a Dell S2725DC on
@@ -141,6 +202,7 @@ func Load(path string) (Config, error) {
 	// merge, and a file that does not mention devices is better served by the
 	// defaults than by none.
 	cfg.Inputs = nil
+	cfg.Displays = nil
 
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return cfg, fmt.Errorf("%s will not parse: %w", path, err)
@@ -164,6 +226,17 @@ func (c *Config) Validate() error {
 	if c.Display < 1 || c.Display > 999 {
 		return fmt.Errorf("display is %d, which is not a display number: it must be 1 to 999, "+
 			"from `ddcutil detect`", c.Display)
+	}
+	for name, n := range c.Displays {
+		if !ValidPlatform(name) {
+			return fmt.Errorf("displays has %q, which is not a platform: use one of %s. "+
+				"A name that does not match would be ignored, and that leaves the wrong "+
+				"display number in charge", name, strings.Join(platforms, ", "))
+		}
+		if n < 1 || n > 999 {
+			return fmt.Errorf("displays.%s is %d, which is not a display number: it must be "+
+				"1 to 999, from `ddcutil detect` or `ddcctl -m`", name, n)
+		}
 	}
 	kept := c.Inputs[:0]
 	for _, in := range c.Inputs {

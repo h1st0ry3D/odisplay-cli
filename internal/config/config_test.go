@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -300,3 +301,203 @@ func TestAFileWithNoInputsHasNoInputs(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// The same monitor is a different index under ddcutil than under ddcctl, so one
+// settings file shared by an Omarchy laptop and a Mac has to be able to carry
+// both.
+func TestDisplayNumberPrefersThisPlatform(t *testing.T) {
+	c := Config{Display: 1, Displays: map[string]int{"linux": 3, "darwin": 2}}
+
+	// Whichever platform this test is running on, its own entry wins.
+	want := c.Displays[runtime.GOOS]
+	if got := c.DisplayNumber(); got != want {
+		t.Errorf("DisplayNumber() = %d, want %d for %s", got, want, runtime.GOOS)
+	}
+
+	// And the number meant for the other one is still readable.
+	other := "linux"
+	if runtime.GOOS == "linux" {
+		other = "darwin"
+	}
+	if got := c.Displays[other]; got < 1 {
+		t.Errorf("displays[%s] = %d, want it kept", other, got)
+	}
+}
+
+func TestDisplayNumberFallsBackToTheSharedDefault(t *testing.T) {
+	cases := []Config{
+		{Display: 4},
+		{Display: 4, Displays: map[string]int{}},
+		// An entry for the other platform only.
+		{Display: 4, Displays: map[string]int{"nonesuch": 9}},
+	}
+	for _, c := range cases {
+		if got := c.DisplayNumber(); got != 4 {
+			t.Errorf("DisplayNumber() = %d, want 4 for %+v", got, c)
+		}
+	}
+}
+
+// Setting the number on one machine must not move the other's, which is the
+// whole reason this exists.
+func TestSetDisplayNumberOnlyTouchesThisPlatform(t *testing.T) {
+	c := Config{Display: 1, Displays: map[string]int{
+		"linux": 1, "darwin": 5,
+	}}
+	other := "linux"
+	if runtime.GOOS == "linux" {
+		other = "darwin"
+	}
+	before := c.Displays[other]
+
+	c.SetDisplayNumber(7)
+
+	if got := c.DisplayNumber(); got != 7 {
+		t.Errorf("DisplayNumber() = %d, want 7", got)
+	}
+	if got := c.Displays[other]; got != before {
+		t.Errorf("displays[%s] = %d, want it left at %d", other, got, before)
+	}
+}
+
+// A file carrying both a default and an identical entry is harder to read than
+// one carrying either, so the redundant one goes.
+func TestSetDisplayNumberDropsARedundantEntry(t *testing.T) {
+	c := Config{Display: 1}
+	c.SetDisplayNumber(1)
+	if c.Displays != nil {
+		t.Errorf("Displays = %v, want nil when it matches the default", c.Displays)
+	}
+	if c.DisplayNumber() != 1 {
+		t.Errorf("DisplayNumber() = %d, want 1", c.DisplayNumber())
+	}
+}
+
+func TestSetDisplayNumberKeepsAnotherPlatformsEntry(t *testing.T) {
+	c := Config{Display: 1, Displays: map[string]int{"darwin": 2}}
+	if runtime.GOOS != "darwin" {
+		c.SetDisplayNumber(1)
+		if got := c.Displays["darwin"]; got != 2 {
+			t.Errorf("displays.darwin = %d, want 2 kept", got)
+		}
+		if c.Displays == nil {
+			t.Error("the map was dropped even though it still holds another platform")
+		}
+	}
+}
+
+// "macos" rather than "darwin" would be ignored in silence, leaving the shared
+// default in charge of a machine that may number its displays differently.
+func TestAMisspeltPlatformIsRefused(t *testing.T) {
+	for _, name := range []string{"macos", "osx", "MacOS", "windows", ""} {
+		path := write(t, `{"version":1,"display":1,"displays":{"`+name+`":2},"inputs":[]}`)
+		if _, err := Load(path); err == nil {
+			t.Errorf("Load accepted displays.%q", name)
+		}
+	}
+}
+
+func TestAValidPlatformIsAccepted(t *testing.T) {
+	path := write(t, `{"version":1,"display":1,"displays":{"linux":2,"darwin":3},"inputs":[]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Displays["linux"] != 2 || cfg.Displays["darwin"] != 3 {
+		t.Errorf("Displays = %v, want both kept", cfg.Displays)
+	}
+}
+
+func TestAnImpossiblePlatformNumberIsRefused(t *testing.T) {
+	for _, n := range []string{"0", "-1", "1000"} {
+		path := write(t, `{"version":1,"display":1,"displays":{"linux":`+n+`},"inputs":[]}`)
+		if _, err := Load(path); err == nil {
+			t.Errorf("Load accepted displays.linux = %s", n)
+		}
+	}
+}
+
+// A file written before this field existed must still load, and must not gain
+// an empty map on the way.
+func TestAFileWithNoDisplaysStillWorks(t *testing.T) {
+	path := write(t, `{"version":1,"display":2,"inputs":[{"key":"dp","vcp":15}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DisplayNumber() != 2 {
+		t.Errorf("DisplayNumber() = %d, want 2", cfg.DisplayNumber())
+	}
+	if cfg.Displays != nil {
+		t.Errorf("Displays = %v, want nil", cfg.Displays)
+	}
+}
+
+// Round trip: the map survives a save, so a shared file stays shared.
+func TestDisplaysRoundTrip(t *testing.T) {
+	path := write(t, `{"version":1,"display":1,"displays":{"linux":1,"darwin":4},"inputs":[]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetPath(path)
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Displays["darwin"] != 4 {
+		t.Errorf("darwin = %d, want 4 after a round trip", again.Displays["darwin"])
+	}
+}
+
+// One test, both machines. A rule that can only be checked for the platform it
+// runs on is a rule nobody can check, so the platform is an argument.
+func TestResolveDisplayForBothMachines(t *testing.T) {
+	cases := []struct {
+		name     string
+		fallback int
+		per      map[string]int
+		linux    int
+		darwin   int
+	}{
+		{
+			name:     "both set, as a shared file would be",
+			fallback: 1,
+			per:      map[string]int{"linux": 1, "darwin": 4},
+			linux:    1,
+			darwin:   4,
+		},
+		{
+			name:     "neither set, an old file",
+			fallback: 2,
+			per:      nil,
+			linux:    2,
+			darwin:   2,
+		},
+		{
+			name:     "only the other one set",
+			fallback: 3,
+			per:      map[string]int{"darwin": 7},
+			linux:    3,
+			darwin:   7,
+		},
+		{
+			name:     "an entry that could not be reached is ignored",
+			fallback: 5,
+			per:      map[string]int{"linux": 0},
+			linux:    5,
+			darwin:   5,
+		},
+	}
+	for _, c := range cases {
+		if got := resolveDisplay(c.fallback, c.per, "linux"); got != c.linux {
+			t.Errorf("%s: linux = %d, want %d", c.name, got, c.linux)
+		}
+		if got := resolveDisplay(c.fallback, c.per, "darwin"); got != c.darwin {
+			t.Errorf("%s: darwin = %d, want %d", c.name, got, c.darwin)
+		}
+	}
+}

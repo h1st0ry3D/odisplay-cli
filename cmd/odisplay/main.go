@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -70,7 +71,7 @@ func usage(w io.Writer) {
   odisplay doctor                       check the programs this needs are installed
   odisplay set name <input> <name>
   odisplay set host <input> <0-3>
-  odisplay set display <n>
+  odisplay set display <n>           for this platform only
   odisplay path                         print the config file's location
 
 Try --dry-run before the first real switch. It builds every command and runs
@@ -216,7 +217,7 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 	// Report what is actually there rather than trusting the file, because the
 	// failure otherwise shows up later as a switch that does nothing while the
 	// devices still move.
-	fmt.Fprintf(out, "\ndisplays (the config says %d):\n", cfg.Display)
+	fmt.Fprintf(out, "\ndisplays (the config says %d on %s):\n", cfg.DisplayNumber(), runtime.GOOS)
 	displays, err := b.Detect(ctx)
 	if err != nil {
 		// Exit 0 means "done", and a caller scripting `doctor && switch`
@@ -232,7 +233,7 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 	for _, d := range displays {
 		if d.Usable {
 			mark := "  "
-			if d.Number == cfg.Display {
+			if d.Number == cfg.DisplayNumber() {
 				mark = "* "
 				chosen = true
 			}
@@ -245,7 +246,7 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 	}
 
 	if !chosen {
-		fmt.Fprintf(out, "\ndisplay %d is not one ddcutil will accept, so every switch would do nothing.\n", cfg.Display)
+		fmt.Fprintf(out, "\ndisplay %d is not one ddcutil will accept, so every switch would do nothing.\n", cfg.DisplayNumber())
 		usable := backend.Addressable(displays)
 		if len(usable) == 0 {
 			fmt.Fprintln(out, "No display on this machine can be switched right now.")
@@ -278,8 +279,15 @@ func cmdList(args []string, out *bufio.Writer, errOut *os.File) int {
 		return order.CodeUsage
 	}
 
+	// Whoever reads this wants the number that is in force here, not the file's
+	// two views of it. `display` in the output is always the answer for the
+	// machine asking; `displays` still carries every platform's for anyone
+	// editing the file.
+	effective := cfg
+	effective.Display = cfg.DisplayNumber()
+
 	if asJSON {
-		raw, err := json.MarshalIndent(cfg, "", "  ")
+		raw, err := json.MarshalIndent(effective, "", "  ")
 		if err != nil {
 			fmt.Fprintln(errOut, err)
 			return order.CodeUsage
@@ -291,7 +299,18 @@ func cmdList(args []string, out *bufio.Writer, errOut *os.File) int {
 	if path, err := config.Path(); err == nil {
 		fmt.Fprintf(out, "config: %s\n", path)
 	}
-	fmt.Fprintf(out, "display: %d\n", cfg.Display)
+	fmt.Fprintf(out, "platform: %s\n", runtime.GOOS)
+	fmt.Fprintf(out, "display: %d", effective.Display)
+	if len(cfg.Displays) > 0 {
+		fmt.Fprintf(out, "  (shared default %d", cfg.Display)
+		for _, name := range config.Platforms() {
+			if n, ok := cfg.Displays[name]; ok {
+				fmt.Fprintf(out, ", %s %d", name, n)
+			}
+		}
+		fmt.Fprint(out, ")")
+	}
+	fmt.Fprintln(out)
 	for _, in := range cfg.Inputs {
 		name := in.Name
 		if name == "" {
@@ -336,12 +355,18 @@ func cmdSet(args []string, out *bufio.Writer, errOut *os.File) int {
 			fmt.Fprintln(errOut, "display must be a number, 1 to 999")
 			return order.CodeUsage
 		}
-		cfg.Display = n
+		// This platform's entry, so setting it on one machine cannot change
+		// the other's. The same monitor is a different index under ddcutil
+		// than under ddcctl.
+		cfg.SetDisplayNumber(n)
 		if err := cfg.Save(); err != nil {
 			fmt.Fprintln(errOut, err)
 			return order.CodeUsage
 		}
-		fmt.Fprintf(out, "display = %d\n", n)
+		fmt.Fprintf(out, "display = %d on %s\n", n, runtime.GOOS)
+		if len(cfg.Displays) == 0 {
+			fmt.Fprintln(out, "that is the same as the shared default, so no per-platform entry was needed")
+		}
 		return order.CodeOK
 	}
 

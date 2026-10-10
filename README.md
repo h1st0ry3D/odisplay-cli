@@ -32,7 +32,7 @@ ordering.
 | `odisplay doctor` | Check the programs this needs are installed, and that the display number is one this machine has |
 | `odisplay set name <input> <name>` | Rename a button |
 | `odisplay set host <input> <0-3>` | Set the Easy-Switch channel |
-| `odisplay set display <n>` | Set the ddcutil display number |
+| `odisplay set display <n>` | Set the display number, for this platform only |
 | `odisplay path` | Print the config file's location |
 
 ### Exit codes
@@ -287,6 +287,7 @@ machine that both are paired with.
 {
   "version": 1,
   "display": 1,
+  "displays": { "linux": 1, "darwin": 1 },
   "inputs": [
     { "key": "usbc", "name": "Laptop", "vcp": 27, "host": "0" },
     { "key": "dp",   "name": "Mac Mini", "vcp": 15, "host": "2" },
