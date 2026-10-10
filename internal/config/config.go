@@ -80,6 +80,12 @@ type Config struct {
 	// one call and ignores this, so it is only read by the Solaar backend.
 	Devices []string `json:"devices,omitempty"`
 
+	// Monitor is the program that moves the display on this machine, filled in
+	// by `list --json` and never read from a file. It is here so a caller can
+	// name the right program rather than assuming one: the two macOS ones are
+	// for different Macs, and naming the wrong one is misleading.
+	Monitor string `json:"monitor,omitempty"`
+
 	path string
 }
 

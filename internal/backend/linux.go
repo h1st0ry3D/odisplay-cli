@@ -27,6 +27,9 @@ type Linux struct {
 
 func (Linux) Platform() string { return "linux" }
 
+// Monitor is ddcutil, which is what moves the display on Linux.
+func (Linux) Monitor() string { return "ddcutil" }
+
 // Plan builds the steps. The monitor is always first.
 func (l Linux) Plan(display, vcp int, channel string) (Plan, error) {
 	if err := validVCP(vcp); err != nil {

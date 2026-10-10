@@ -288,12 +288,14 @@ func cmdList(args []string, out *bufio.Writer, errOut *os.File) int {
 		return order.CodeUsage
 	}
 
-	// Whoever reads this wants the number that is in force here, not the file's
-	// two views of it. `display` in the output is always the answer for the
-	// machine asking; `displays` still carries every platform's for anyone
-	// editing the file.
+	// Whoever reads this wants the number in force here and the name of the
+	// program that will use it, not the file's two views of the number. The
+	// `display` in the output is always the answer for the machine asking;
+	// `displays` still carries every platform's for anyone editing the file.
+	b := backend.New(cfg.Devices)
 	effective := cfg
 	effective.Display = cfg.DisplayNumber()
+	effective.Monitor = b.Monitor()
 
 	if asJSON {
 		raw, err := json.MarshalIndent(effective, "", "  ")

@@ -122,6 +122,10 @@ func Addressable(displays []Display) []Display {
 // Backend plans and runs the switch for one platform.
 type Backend interface {
 	Platform() string
+	// Monitor names the program that moves the display, for a label that says
+	// which one is actually being asked. It differs by machine, and naming the
+	// wrong one has already cost a round of confusion.
+	Monitor() string
 	// Plan builds the steps. It does not run anything.
 	Plan(display, vcp int, channel string) (Plan, error)
 	// Run executes one step.

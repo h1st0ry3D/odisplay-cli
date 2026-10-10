@@ -15,6 +15,8 @@ type Other struct{}
 
 func (Other) Platform() string { return runtime.GOOS }
 
+func (Other) Monitor() string { return "" }
+
 func (Other) Plan(int, int, string) (Plan, error) {
 	return Plan{}, errors.New("odisplay supports Linux and macOS only")
 }

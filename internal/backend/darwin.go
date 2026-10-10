@@ -118,6 +118,15 @@ type Darwin struct {
 
 func (Darwin) Platform() string { return "darwin" }
 
+// Monitor names whichever of the two this Mac has, and falls back to the one
+// that would have to be installed, so a label always names something real.
+func (Darwin) Monitor() string {
+	if m := monitor(); m != "" {
+		return filepath.Base(m)
+	}
+	return "m1ddc"
+}
+
 // Plan builds the steps. The monitor is always first.
 func (d Darwin) Plan(display, vcp int, channel string) (Plan, error) {
 	if err := validVCP(vcp); err != nil {
