@@ -74,11 +74,11 @@ func New(devices []string) Backend { return Linux{Devices: devices} }
 // Detect lists what ddcutil can see. It reads EDID and capabilities and changes
 // nothing on the hardware.
 //
-// ddcutil does not print the display numbers it uses; the number is the
-// position in its listing. So the list is numbered here, in order, which is the
-// only way to tell the user what to put in the config. The number is not stable
-// across reboots or cable changes, because a display that stops enumerating
-// shifts everything after it up by one.
+// The numbers come from ddcutil, not from counting its output. ddcutil numbers
+// the displays it will accept and gives a rejected connector no number at all,
+// so the same monitor is "Display 1" whether or not a laptop panel is also
+// plugged in. The numbers are not stable forever: a display that stops
+// answering over I2C drops out and the rest are renumbered.
 func (l Linux) Detect(ctx context.Context) ([]Display, error) {
 	text, err := runStepRaw(ctx, Step{Bin: ddcutil, Args: []string{"detect"}}, ddcTimeout)
 	if err != nil {
@@ -90,9 +90,14 @@ func (l Linux) Detect(ctx context.Context) ([]Display, error) {
 // parseDisplays turns ddcutil detect output into the list doctor reports.
 //
 // Each display is a block separated by a blank line, with its fields indented
-// under it. The first line is the verdict, either "Display N" or "Invalid
-// display". It is a separate function so it can be checked against captured
-// output without running anything against the hardware.
+// under it. The first line is the verdict, and it is the only thing that says
+// which number ddcutil will accept:
+//
+//	Display 1          addressable, number 1
+//	Invalid display    not addressable, and NOT given a number
+//
+// It is a separate function so it can be checked against captured output without
+// running anything against the hardware.
 func parseDisplays(text string) []Display {
 	var out []Display
 	for _, block := range strings.Split(text, "\n\n") {
@@ -101,7 +106,7 @@ func parseDisplays(text string) []Display {
 			continue
 		}
 		lines := strings.Split(block, "\n")
-		d := Display{Number: len(out) + 1, Usable: true}
+		d := Display{Usable: true}
 		var reason string
 		for _, line := range lines {
 			field, value, ok := strings.Cut(line, ":")
@@ -122,15 +127,34 @@ func parseDisplays(text string) []Display {
 			// because "this panel does not do DDC/CI" and "this monitor is not
 			// answering" are different problems with different fixes.
 			if trimmed := strings.TrimSpace(line); trimmed != "" &&
-				!strings.HasPrefix(trimmed, "Invalid display") &&
 				!strings.HasSuffix(trimmed, ":") {
 				reason = trimmed
 			}
 		}
-		if strings.HasPrefix(lines[0], "Invalid") || strings.HasPrefix(lines[0], "Unsupported") {
+
+		verdict := strings.TrimSpace(lines[0])
+		switch {
+		case strings.HasPrefix(verdict, "Display "):
+			// ddcutil numbers the displays it will accept, starting at 1.
+			// Read its number rather than counting: a connector it rejected
+			// takes no number at all, so counting would shift every display
+			// after it up by one and name a display that does not exist.
+			number, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(verdict, "Display ")))
+			if err != nil {
+				d.Number = 0
+				d.Usable = false
+				d.Why = "ddcutil printed an unreadable display number: " + verdict
+				break
+			}
+			d.Number = number
+		default:
+			// "Invalid display", "Unsupported display". This one has no
+			// number, so --display cannot reach it.
+			d.Number = 0
 			d.Usable = false
 			d.Why = reason
 		}
+
 		if d.Name == "" {
 			d.Name = "(unnamed)"
 		}

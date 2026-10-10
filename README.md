@@ -72,28 +72,36 @@ config:   /home/you/.config/odisplay/odisplay.json
   found  /usr/bin/solaar
 
 displays (the config says 1):
-* display 1  card2-DP-6              DELL S2725DC
+* display 1   card2-DP-6              DELL S2725DC
 
 ready.
 ```
 
 `doctor` is worth reading before every new machine, because the display number
-is not something you can guess. It is `ddcutil`'s own index, it is positional,
-and it moves when a display stops enumerating. On a laptop that usually means the
-built-in panel is in the list ahead of your external monitor:
+is not something you can guess. It is `ddcutil`'s own index, read from what
+`ddcutil detect` prints. On a laptop the built-in panel is usually in that list
+too, but ddcutil gives it no number because it cannot do DDC/CI, so it does not
+push your monitor up by one:
 
 ```
 displays (the config says 1):
-* display 1  card1-eDP-1   This is a laptop display.  Laptop displays do not support DDC/CI.
-  display 2  card2-DP-6    DELL S2725DC
+  (not addressable) card1-eDP-1    This is a laptop display.  Laptop displays do not support DDC/CI.
+* display 1   card2-DP-6
 
-display 1 cannot be switched: This is a laptop display.  Laptop displays do not support DDC/CI.
-Every switch will quietly do nothing, and the devices will still move.
-Display 2 (card2-DP-6) can be. Set it with `odisplay set display 2`.
+ready.
 ```
 
-Note the second line of that message. It is the exact failure from the incident
-that started this tool, and it is the one `doctor` exists to catch early.
+Counting the lines instead of reading the numbers would call that external
+monitor "display 2", name a display ddcutil does not have, and send you off to
+change a config that was already right.
+
+The number is not stable forever: if a display stops answering over I2C it
+drops out of the list and the others are renumbered. Run `doctor` when a switch
+stops working.
+
+`doctor` exits non-zero when it cannot verify the display number rather than
+saying `ready`, so `odisplay doctor && odisplay switch dp` does the right thing
+when the check did not run.
 
 ## Install
 

@@ -151,12 +151,19 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// Validate drops anything unusable and says what it dropped. Settings come
-// from a hand-editable file, so an entry the panel no longer has, or a channel
-// off the list, is ignored rather than fatal.
+// Validate drops what is unusable and refuses what would be dangerous.
+//
+// A channel off the closed list is dropped to "off" rather than refused: the
+// result is that the keyboard and mouse stay where they are, which is the safe
+// direction, and the file is somewhere a person edits by hand.
+//
+// The display number is different. Repairing an out-of-range one to 1 would
+// point every switch at whichever monitor happens to be first, and the panel
+// would report success. A number that names no monitor is refused instead.
 func (c *Config) Validate() error {
 	if c.Display < 1 || c.Display > 999 {
-		c.Display = 1
+		return fmt.Errorf("display is %d, which is not a display number: it must be 1 to 999, "+
+			"from `ddcutil detect`", c.Display)
 	}
 	kept := c.Inputs[:0]
 	for _, in := range c.Inputs {

@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 
 	"github.com/h1st0ry3D/odisplay-cli/internal/backend"
@@ -33,7 +34,7 @@ func run(args []string) int {
 		return order.CodeUsage
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 	defer stop()
 
 	switch args[0] {
@@ -150,8 +151,9 @@ func cmdPlan(args []string, out *bufio.Writer, errOut *os.File) int {
 	return res.Code
 }
 
-// doctor checks that the programs this platform needs are installed. It runs
-// nothing that touches hardware.
+// doctor checks that the programs this platform needs are installed, and that
+// the display number is one this machine actually has. It runs nothing that
+// touches hardware.
 func cmdDoctor(ctx context.Context, args []string, out *bufio.Writer, errOut *os.File) int {
 	if len(args) != 0 {
 		fmt.Fprintln(errOut, "doctor takes no arguments")
@@ -161,8 +163,12 @@ func cmdDoctor(ctx context.Context, args []string, out *bufio.Writer, errOut *os
 	if !ok {
 		return order.CodeUsage
 	}
-	b := backend.New(cfg.Devices)
+	return doctor(ctx, out, backend.New(cfg.Devices), cfg)
+}
 
+// doctor is cmdDoctor with the backend supplied, so its decisions can be
+// checked against a scripted one.
+func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg config.Config) int {
 	fmt.Fprintf(out, "platform: %s\n", b.Platform())
 	fmt.Fprintf(out, "config:   ")
 	if path, err := config.Path(); err == nil {
@@ -173,9 +179,13 @@ func cmdDoctor(ctx context.Context, args []string, out *bufio.Writer, errOut *os
 
 	seen := map[string]bool{}
 	problems := 0
+	missing := 0
 	for _, in := range cfg.Inputs {
 		plan, err := b.Plan(cfg.Display, in.VCP, string(in.Host))
 		if err != nil {
+			// A value the config got wrong is not a missing program. The
+			// same condition on `switch` exits 1, so it has to exit 1 here
+			// too, or the exit code means two things.
 			fmt.Fprintf(out, "  %-6s BAD  %v\n", in.Key, err)
 			problems++
 			continue
@@ -189,58 +199,60 @@ func cmdDoctor(ctx context.Context, args []string, out *bufio.Writer, errOut *os
 				fmt.Fprintf(out, "  found  %s\n", prog)
 			} else {
 				fmt.Fprintf(out, "  MISSING %s\n", prog)
-				problems++
+				missing++
 			}
 		}
 	}
-	if problems > 0 {
+	if missing > 0 {
 		fmt.Fprintln(out, "\nsomething is missing. Switches will fail until it is installed.")
 		return order.CodeMissing
 	}
+	if problems > 0 {
+		fmt.Fprintln(out, "\nthe settings have a problem in them. Fix that before switching.")
+		return order.CodeUsage
+	}
 
-	// The display number is ddcutil's own index and it is positional, so it
-	// shifts when a display stops enumerating. Report what is actually there
-	// rather than trusting the file, because the failure otherwise shows up
-	// later as a switch that does nothing.
+	// The display number is ddcutil's own index, read from what it prints.
+	// Report what is actually there rather than trusting the file, because the
+	// failure otherwise shows up later as a switch that does nothing while the
+	// devices still move.
 	fmt.Fprintf(out, "\ndisplays (the config says %d):\n", cfg.Display)
 	displays, err := b.Detect(ctx)
 	if err != nil {
+		// Exit 0 means "done", and a caller scripting `doctor && switch`
+		// would proceed on a display number nothing has checked.
 		fmt.Fprintf(out, "  could not read them: %v\n", err)
-		fmt.Fprintln(out, "\nready, but the display number is unverified.")
-		return order.CodeOK
+		fmt.Fprintln(out, "\nnot checked. Treat the display number as unknown until this works.")
+		return order.CodeMissing
 	}
 	if len(displays) == 0 {
 		fmt.Fprintln(out, "  none")
 	}
-	chosen := -1
+	chosen := false
 	for _, d := range displays {
-		mark := "  "
-		if d.Number == cfg.Display {
-			mark = "* "
-			chosen = d.Number
+		if d.Usable {
+			mark := "  "
+			if d.Number == cfg.Display {
+				mark = "* "
+				chosen = true
+			}
+			fmt.Fprintf(out, "%sdisplay %-3d %s\n", mark, d.Number, d.Name)
+			continue
 		}
-		note := ""
-		if !d.Usable {
-			note = "  (" + d.Why + ")"
-		}
-		fmt.Fprintf(out, "%sdisplay %d  %-22s%s\n", mark, d.Number, d.Name, note)
+		// ddcutil gives no number to a display it will not accept, so this one
+		// cannot be reached with --display however the config is set.
+		fmt.Fprintf(out, "  (not addressable) %-14s %s\n", d.Name, d.Why)
 	}
 
-	if chosen < 0 {
-		fmt.Fprintf(out, "\ndisplay %d is not in that list. Fix it with `odisplay set display <n>`.\n", cfg.Display)
-		return order.CodeUsage
-	}
-	if cfg.Display > 0 && cfg.Display <= len(displays) && !displays[cfg.Display-1].Usable {
-		chosen := displays[cfg.Display-1]
-		fmt.Fprintf(out, "\ndisplay %d cannot be switched: %s\n", chosen.Number, chosen.Why)
-		fmt.Fprintln(out, "Every switch will quietly do nothing, and the devices will still move.")
-		for _, d := range displays {
-			if d.Usable {
-				fmt.Fprintf(out, "Display %d (%s) can be. Set it with `odisplay set display %d`.\n", d.Number, d.Name, d.Number)
-				return order.CodeUsage
-			}
+	if !chosen {
+		fmt.Fprintf(out, "\ndisplay %d is not one ddcutil will accept, so every switch would do nothing.\n", cfg.Display)
+		usable := backend.Addressable(displays)
+		if len(usable) == 0 {
+			fmt.Fprintln(out, "No display on this machine can be switched right now.")
+		} else {
+			fmt.Fprintf(out, "Display %d (%s) is. Set it with `odisplay set display %d`.\n",
+				usable[0].Number, usable[0].Name, usable[0].Number)
 		}
-		fmt.Fprintln(out, "No display on this machine can be switched right now.")
 		return order.CodeUsage
 	}
 	fmt.Fprintln(out, "\nready.")
@@ -373,10 +385,9 @@ func cmdSet(args []string, out *bufio.Writer, errOut *os.File) int {
 	return order.CodeOK
 }
 
+// parseNumber reads a whole string as a number. strconv.Atoi rather than
+// Sscanf, which takes the leading digits of "2abc" and reports success, so
+// `set display 2abc` would quietly write 2.
 func parseNumber(s string) (int, error) {
-	var n int
-	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return strconv.Atoi(strings.TrimSpace(s))
 }

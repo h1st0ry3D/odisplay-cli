@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -65,11 +66,43 @@ func TestHostAcceptsNumbersAndStrings(t *testing.T) {
 	}
 }
 
-func TestDisplayOutOfRangeFallsBackToOne(t *testing.T) {
-	path := write(t, `{"version":1,"display":0}`)
-	cfg, _ := Load(path)
+// Repairing an impossible display number to 1 would point every switch at
+// whichever monitor happens to be first, and report success for it.
+func TestDisplayOutOfRangeIsRefusedNotRepaired(t *testing.T) {
+	for _, body := range []string{
+		`{"version":1,"display":0}`,
+		`{"version":1,"display":-3}`,
+		`{"version":1,"display":100000}`,
+	} {
+		if _, err := Load(write(t, body)); err == nil {
+			t.Errorf("Load accepted %s", body)
+		}
+	}
+}
+
+func TestDisplayInRangeIsKept(t *testing.T) {
+	for _, n := range []int{1, 2, 7, 999} {
+		cfg, err := Load(write(t, `{"version":1,"display":`+itoa(n)+`}`))
+		if err != nil {
+			t.Errorf("display %d: %v", n, err)
+			continue
+		}
+		if cfg.Display != n {
+			t.Errorf("display = %d, want %d", cfg.Display, n)
+		}
+	}
+}
+
+// A file with no display at all must not become display 0, which is not a
+// display. Default() supplies 1 for a missing file, and a missing key is
+// reported as such.
+func TestMissingDisplayKey(t *testing.T) {
+	cfg, err := Load(write(t, `{"version":1,"inputs":[{"key":"dp","vcp":15}]}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	if cfg.Display != 1 {
-		t.Errorf("display = %d, want 1", cfg.Display)
+		t.Errorf("display = %d, want the default 1", cfg.Display)
 	}
 }
 
@@ -265,3 +298,5 @@ func TestAFileWithNoInputsHasNoInputs(t *testing.T) {
 		t.Errorf("inputs = %+v, want none", cfg.Inputs)
 	}
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }

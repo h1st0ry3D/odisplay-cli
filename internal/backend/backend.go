@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -84,10 +85,12 @@ func (p Plan) Programs() []string {
 
 // Display is one monitor the machine can see.
 type Display struct {
-	// Number is the index the program itself uses. It is positional, not
-	// stable: unplugging a cable or a laptop panel going to sleep can shift
-	// it, which is why doctor reports what it sees rather than trusting the
-	// config.
+	// Number is the index the program itself uses, read from its own output.
+	// Zero when the program gives it none, which is what it does to a display
+	// it will not accept. A zero is not addressable however the config is set.
+	//
+	// Not stable forever: a display that stops answering drops out of the list
+	// and the others are renumbered.
 	Number int
 	// Name is the connector or model, for a person to recognise.
 	Name string
@@ -98,6 +101,22 @@ type Display struct {
 	// monitor that is merely not answering right now is a different
 	// problem with a different fix, so the two are not reported alike.
 	Why string
+}
+
+// Addressable returns the displays a --display number can actually reach, in
+// the order the program numbers them.
+//
+// A connector the program rejected has no number at all, so it cannot be
+// addressed however the config is set. Counting it would name a display that
+// does not exist.
+func Addressable(displays []Display) []Display {
+	var out []Display
+	for _, d := range displays {
+		if d.Usable && d.Number > 0 {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // Backend plans and runs the switch for one platform.
@@ -147,6 +166,12 @@ const (
 	solaarTimeout = 10 * time.Second
 )
 
+// waitDelay is how long Wait keeps draining a child's output after the context
+// has already expired and the child has been killed. Short, because by then the
+// answer is decided and the only thing left is a pipe some grandchild is still
+// holding open.
+const waitDelay = 2 * time.Second
+
 // Run executes one step and returns its output as a single line, because the
 // panel has one line to show an error in.
 func runStep(ctx context.Context, s Step, timeout time.Duration) (string, error) {
@@ -165,13 +190,34 @@ func runStepRaw(ctx context.Context, s Step, timeout time.Duration) (string, err
 
 	cmd := exec.CommandContext(ctx, s.Bin, s.Args...)
 	cmd.Env = env()
-	var buf bytes.Buffer
-	cmd.Stdout = &limited{w: &buf, left: outputLimit}
-	cmd.Stderr = &limited{w: &buf, left: outputLimit}
+	// A child that leaves a grandchild holding the pipe keeps Wait blocked even
+	// after the child itself has been killed, because Wait also waits for the
+	// goroutines draining stdout and stderr. Those goroutines then wait for a
+	// writer nobody is going to kill. WaitDelay bounds that, so a timeout is
+	// actually a timeout: without it, `sh -c 'sleep 300'` holds the tool for
+	// the full 300 seconds however short the budget was.
+	cmd.WaitDelay = waitDelay
+	// One capture for both streams, not two writers over one buffer: os/exec
+	// gives stdout and stderr a goroutine each whenever they are not the same
+	// writer value, so a shared *bytes.Buffer is written from two threads at
+	// once. That buffer holds the message explaining what happened to the
+	// user's keyboard, so it is not a place to leave a race.
+	out := &capture{left: outputLimit}
+	cmd.Stdout = out
+	cmd.Stderr = out
 
 	err := cmd.Run()
-	text := buf.String()
+	text := out.String()
 	if err != nil {
+		// This has to come before the ExitError unwrap. CommandContext kills
+		// the child when the context expires, and Wait then reports an
+		// *exec.ExitError with code -1. Checked in the other order, every
+		// timeout reads "exited with -1", which says nothing about a child
+		// that never came back.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return text, fmt.Errorf("%s did not finish within %s, so it was stopped",
+				filepath.Base(s.Bin), timeout)
+		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
 			if strings.TrimSpace(text) == "" {
@@ -179,39 +225,55 @@ func runStepRaw(ctx context.Context, s Step, timeout time.Duration) (string, err
 			}
 			return text, errors.New(flatten(text))
 		}
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return text, fmt.Errorf("%s did not finish within %s", filepath.Base(s.Bin), timeout)
-		}
 		return text, fmt.Errorf("%s: %w", filepath.Base(s.Bin), err)
 	}
 	return text, nil
 }
 
-// Installed reports whether a program is on this machine, for the doctor
-// check. It does not run it.
+// Installed reports whether a program is on this machine and can be run, for
+// the doctor check. It does not run it.
+//
+// This uses LookPath rather than Stat, so it agrees with what runStep will
+// actually find. Stat would call a non-executable file installed, and doctor
+// would report ready for a switch that then exits "not installed".
 func Installed(bin string) bool {
-	_, err := os.Stat(bin)
+	_, err := exec.LookPath(bin)
 	return err == nil
 }
 
-// limited is a writer that stops after n bytes, so a runaway child cannot grow
-// this tool's memory without limit.
-type limited struct {
-	w    *bytes.Buffer
+// capture collects a child's output from both streams under one budget.
+//
+// os/exec writes stdout and stderr from a goroutine each unless they are the
+// same writer value, so this has to be safe to write from two threads at once.
+// One buffer and one remaining count, so the cap is the cap rather than twice
+// the cap.
+type capture struct {
+	mu   sync.Mutex
+	buf  bytes.Buffer
 	left int
 }
 
-func (l *limited) Write(p []byte) (int, error) {
-	if l.left <= 0 {
+func (c *capture) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.left <= 0 {
+		// Report the full length so the child does not see a short write and
+		// treat it as a broken pipe.
 		return len(p), nil
 	}
 	n := len(p)
-	if n > l.left {
-		n = l.left
+	if n > c.left {
+		n = c.left
 	}
-	l.w.Write(p[:n])
-	l.left -= n
+	c.buf.Write(p[:n])
+	c.left -= n
 	return len(p), nil
+}
+
+func (c *capture) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
 }
 
 // flatten makes a child's output into one line. A wrapped message reads as one

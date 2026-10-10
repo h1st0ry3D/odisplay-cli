@@ -1,9 +1,9 @@
 package backend
 
 import (
-	"bytes"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -166,20 +166,53 @@ func TestFlattenMakesOneLine(t *testing.T) {
 }
 
 // The output cap is a backstop, so a child cannot grow this process without
-// limit.
-func TestLimitedWriterStopsAtTheCap(t *testing.T) {
-	var buf bytes.Buffer
-	l := &limited{w: &buf, left: 4}
-	if n, err := l.Write([]byte("abcdefgh")); n != 8 || err != nil {
+// limit. It is one budget for both streams, not one each, and it is safe to
+// write from two goroutines because os/exec really does use two.
+func TestCaptureStopsAtTheCap(t *testing.T) {
+	c := &capture{left: 4}
+	if n, err := c.Write([]byte("abcdefgh")); n != 8 || err != nil {
 		t.Errorf("Write = %d, %v, want 8, nil", n, err)
 	}
-	if buf.String() != "abcd" {
-		t.Errorf("buffer = %q, want abcd", buf.String())
+	if got := c.String(); got != "abcd" {
+		t.Errorf("buffer = %q, want abcd", got)
 	}
-	// Writing past the cap still reports full length so the child does not see
-	// a broken pipe.
-	l2 := &limited{w: &buf, left: 0}
-	if n, _ := l2.Write([]byte("xyz")); n != 3 {
+	// Writing past the cap still reports the full length so the child does not
+	// see a broken pipe.
+	c2 := &capture{left: 0}
+	if n, _ := c2.Write([]byte("xyz")); n != 3 {
 		t.Errorf("Write past cap = %d, want 3", n)
+	}
+	if got := c2.String(); got != "" {
+		t.Errorf("buffer = %q, want empty", got)
+	}
+}
+
+func TestCaptureIsSafeFromTwoGoroutines(t *testing.T) {
+	c := &capture{left: 1 << 20}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200 {
+				c.Write([]byte("0123456789"))
+			}
+		}()
+	}
+	wg.Wait()
+	if len(c.String()) != 8*200*10 {
+		t.Errorf("length = %d, want %d: writes were lost or torn", len(c.String()), 8*200*10)
+	}
+}
+
+// One budget covers both streams. With a writer each, the cap would be twice
+// what it says it is.
+func TestCaptureSharesOneBudgetAcrossStreams(t *testing.T) {
+	c := &capture{left: 6}
+	c.Write([]byte("abc"))
+	c.Write([]byte("def"))
+	c.Write([]byte("ghi"))
+	if got := c.String(); got != "abcdef" {
+		t.Errorf("buffer = %q, want abcdef", got)
 	}
 }
