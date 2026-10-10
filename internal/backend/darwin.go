@@ -4,6 +4,7 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,9 +21,31 @@ import (
 // They are resolved to absolute paths here rather than left to PATH at exec
 // time, so nothing in the session can change what a name resolves to later.
 var (
+	m1ddc    = mustFind("m1ddc", searchDirs()...)
 	ddcctl   = mustFind("ddcctl", searchDirs()...)
 	mxswitch = mustFind("mxswitch", searchDirs()...)
 )
+
+// monitor is the program that moves the display, and it is a choice rather than
+// a constant because the two are for different Macs.
+//
+// m1ddc is preferred. It is the one that works on Apple Silicon, which is every
+// Mac made since 2020: ddcctl has an open issue from the M1 launch asking for
+// this, its last commit is from November 2022, and the reason is that Apple
+// replaced the framebuffer interfaces it drives. Its DDC calls do nothing on
+// those machines while still reporting that they ran.
+//
+// ddcctl is kept as the fallback because it is the one that works on Intel
+// Macs, where m1ddc explicitly does not.
+func monitor() string {
+	if Installed(m1ddc) {
+		return m1ddc
+	}
+	if Installed(ddcctl) {
+		return ddcctl
+	}
+	return ""
+}
 
 // searchDirs is where both programs are looked for, in order.
 //
@@ -100,18 +123,36 @@ func (d Darwin) Plan(display, vcp int, channel string) (Plan, error) {
 	if err := validVCP(vcp); err != nil {
 		return Plan{}, err
 	}
+	if display < 1 {
+		return Plan{}, fmt.Errorf("display %d is not a display number: it must be 1 or more", display)
+	}
+
 	p := Plan{Platform: "darwin"}
-	// -d is a one-based display number, -i the MCCS value in decimal. This is
-	// kfix/ddcctl's own documented invocation: `ddcctl -d 1 -i 17`.
-	p.Steps = append(p.Steps, Step{
-		Bin:  ddcctl,
-		Args: []string{"-d", strconv.Itoa(display), "-i", decVCP(vcp)},
-	})
+	switch mon := monitor(); mon {
+	case m1ddc:
+		// `m1ddc display <n> set input <vcp>`, where the value is the same
+		// MCCS number that goes in the settings file.
+		p.Steps = append(p.Steps, Step{
+			Bin:  mon,
+			Args: []string{"display", strconv.Itoa(display), "set", "input", decVCP(vcp)},
+		})
+	case ddcctl:
+		// `ddcctl -d <n> -i <vcp>`, which is kfix/ddcctl's own documented form.
+		p.Steps = append(p.Steps, Step{
+			Bin:  mon,
+			Args: []string{"-d", strconv.Itoa(display), "-i", decVCP(vcp)},
+		})
+	default:
+		// Named here rather than at the point of failure, so the error says
+		// what to install instead of what was not found.
+		return Plan{}, fmt.Errorf("neither m1ddc nor ddcctl is installed, " +
+			"so there is nothing to move the display with. " +
+			"On Apple Silicon: `brew install m1ddc`")
+	}
+
 	if channel == "0" {
 		return p, nil
 	}
-	// mxswitch takes the channel as a bare argument and accepts only 1, 2 or 3,
-	// so 0 never reaches it: off means this loop does not run.
 	if err := validChannel(channel); err != nil {
 		return Plan{}, err
 	}
@@ -151,23 +192,84 @@ func New(devices []string) Backend {
 // is simply refused. So the list is found by asking each number in turn whether
 // it answers, which is a read: `-i ?` queries the input source and writes
 // nothing.
+// ProbeLimit is how many display numbers the ddcctl probe will try. Only used
+// on Intel Macs, where ddcctl is the fallback and has no way to list displays.
 const ProbeLimit = 4
 
-// ddcctl has no listing mode. There is no flag for it: the arguments are the
-// settings to change, and `-d` only selects which display to change them on. An
-// earlier version of this ran `ddcctl -m` expecting a list, which is the mute
-// command, and hung until the timeout stopped it.
+// Detect lists the displays this Mac can switch.
 //
-// So the displays are discovered by asking each number whether it answers.
+// With m1ddc it is a listing: `m1ddc display list` prints one line per external
+// display, numbered from 1, and skips the built-in one. That is the numbering
+// the switch uses, so it is the numbering to show.
+//
+// With ddcctl there is no listing mode at all, so the numbers are found by
+// asking each one in turn whether it answers. See probeDDCCTL.
+func (d Darwin) Detect(ctx context.Context) ([]Display, error) {
+	if monitor() == m1ddc {
+		return listWithM1DDC(ctx)
+	}
+	return probeDDCCTL(ctx)
+}
+
+// listWithM1DDC reads `m1ddc display list`, whose lines look like:
+//
+//	[1] DELL S2725DC (0F0E1D2C-...)
+//
+// The number is what `m1ddc display <n>` takes. Nothing here proves DDC works
+// on a display: a luminance read is not a good proxy, because a monitor can
+// refuse that and still switch inputs. A display that cannot be switched says
+// so when it is switched, which is the report that matters.
+func listWithM1DDC(ctx context.Context) ([]Display, error) {
+	text, err := runStepRaw(ctx, Step{Bin: m1ddc, Args: []string{"display", "list"}}, m1ddcTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("m1ddc display list: %w", err)
+	}
+	var out []Display
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "[") {
+			continue
+		}
+		close := strings.Index(line, "]")
+		if close < 0 {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(line[1:close]))
+		if err != nil || n < 1 {
+			continue
+		}
+		name := strings.TrimSpace(line[close+1:])
+		// The trailing parenthesised UUID is not something to show a person.
+		if i := strings.LastIndex(name, " ("); i > 0 {
+			name = strings.TrimSpace(name[:i])
+		}
+		if name == "" {
+			name = "display " + strconv.Itoa(n)
+		}
+		out = append(out, Display{Number: n, Name: name, Usable: true})
+	}
+	if len(out) == 0 {
+		// m1ddc says "No external display found, aborting" and exits non-zero,
+		// so reaching here means it printed something unreadable rather than
+		// nothing. Refusing is the safe direction: an empty list would read as
+		// a machine with no monitors.
+		return nil, fmt.Errorf("m1ddc did not name any displays in %q", strings.TrimSpace(text))
+	}
+	return out, nil
+}
+
+// probeDDCCTL finds display numbers by asking each one.
+//
+// ddcctl has no listing mode: its arguments are the settings to change, and -d
+// only picks which display to change them on. A number past the end of its list
+// is refused at once, and one that exists either answers a read or does not.
+//
 // Three outcomes are told apart, because they need different fixes:
 //
-//	answers          the number works and the monitor speaks DDC
-//	refused          no such number, so a lower one is right
-//	no answer        the number may be right but the monitor is not replying
-//
-// The last is the Apple Silicon case, where some ports have no working DDC path
-// at all, and it is worth saying so rather than reporting the number as wrong.
-func (d Darwin) Detect(ctx context.Context) ([]Display, error) {
+//	answers     the number works and the monitor speaks DDC
+//	refused     no such number, so a lower one is right
+//	no answer   the number may be right but the monitor is not replying
+func probeDDCCTL(ctx context.Context) ([]Display, error) {
 	var out []Display
 	for n := 1; n <= ProbeLimit; n++ {
 		text, err := runStepRaw(ctx, Step{
@@ -179,42 +281,12 @@ func (d Darwin) Detect(ctx context.Context) ([]Display, error) {
 		switch {
 		case err == nil && strings.Contains(text, "0x60"):
 			d.Usable = true
-			d.Name = describeInput(text)
 		case err != nil && strings.Contains(text+err.Error(), "Usage"):
-			// ddcctl prints its help when the number is past the end of its
-			// own list, so this number does not exist on this machine.
-			d.Usable = false
 			d.Why = "ddcctl has no display with this number"
 		default:
-			// The number may well be right; the monitor is what did not
-			// answer. Saying it does not exist would send someone looking for
-			// a number when the problem is elsewhere.
-			//
-			// Two causes, most likely first. A monitor usually only accepts
-			// DDC on the input it is currently showing, so a machine whose
-			// input is not on screen cannot command it: the channel is there
-			// but the monitor is not listening on it. Only then is the port
-			// worth suspecting.
-			d.Usable = false
-			d.Why = "the monitor did not answer. It usually only accepts DDC on " +
-				"the input it is showing, so switch it to this machine's input " +
-				"and look again. If it still does not answer, the port is the " +
-				"likely cause: on Apple Silicon a built-in HDMI port often has " +
-				"no working DDC path"
+			d.Why = "the monitor did not answer"
 		}
 		out = append(out, d)
 	}
 	return out, nil
-}
-
-// describeInput pulls the readable part out of a `-i ?` reply, so a display is
-// labelled by the input it is on rather than by its number twice.
-func describeInput(text string) string {
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "Input Source") {
-			return strings.Join(strings.Fields(line), " ")
-		}
-	}
-	return "ddcctl display"
 }

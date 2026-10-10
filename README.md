@@ -114,7 +114,8 @@ it needs:
 |---|---|---|---|
 | Linux | [`ddcutil`](https://github.com/rockowitz/ddcutil) | Moving the monitor | Yes |
 | Linux | [`solaar`](https://pwr-solaar.github.io/Solaar/) | Moving the keyboard and mouse | Only if you use the Easy-Switch hosts |
-| macOS | [`ddcctl`](https://github.com/kfix/ddcctl) | Moving the monitor | Yes |
+| macOS (Apple Silicon) | [`m1ddc`](https://github.com/waydabber/m1ddc) | Moving the monitor | Yes |
+| macOS (Intel) | [`ddcctl`](https://github.com/kfix/ddcctl) | Moving the monitor | Yes |
 | macOS | [`mxswitch`](https://github.com/marcocosta97/mxswitch) | Moving the keyboard and mouse | Only if you use the Easy-Switch hosts |
 
 The optional one is genuinely optional. Without Solaar, every display switch still works; a switch
@@ -164,8 +165,15 @@ before editing.
 ### macOS
 
 ```sh
-brew install ddcctl
+brew install m1ddc        # Apple Silicon, which is every Mac since 2020
+# brew install ddcctl     # Intel only
 ```
+
+**Use `m1ddc` on Apple Silicon.** `ddcctl` does not work there: it has an open issue from the M1
+launch asking for it, its last commit is from November 2022, and the reason is that Apple replaced
+the framebuffer interfaces it drives. Its DDC calls do nothing on those machines while still
+reporting that they ran, which is the worst way for this to fail. `odisplay` prefers `m1ddc` when
+both are installed, and falls back to `ddcctl` on Intel, where `m1ddc` explicitly does not work.
 
 And for the keyboard and mouse, [mxswitch](https://github.com/marcocosta97/mxswitch), which sends
 the HID++ ChangeHost command itself so Logi Options+ does not have to be running:
@@ -175,8 +183,8 @@ git clone https://github.com/marcocosta97/mxswitch
 cd mxswitch && make && make install PREFIX="$HOME/.local"
 ```
 
-`brew` puts ddcctl in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel. Both are
-looked for, so it does not matter which you have — and neither does a hand-built one in
+`brew` puts them in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel. All of
+those are looked for, so it does not matter which you have — and neither does a hand-built one in
 `~/.local/bin`, which is where mxswitch's own `make install` puts it.
 
 mxswitch needs **Input Monitoring** from macOS, which `make install` offers to grant. Keep the
@@ -211,7 +219,8 @@ Nothing else is written anywhere.
 ### The ordering
 
 ```
-1. ddcctl -d <display> -i <vcp>     or   ddcutil setvcp 60 0x?? --display <n>
+1. m1ddc display <n> set input <vcp> or   ddcutil setvcp 60 0x?? --display <n>
+   ddcctl -d <n> -i <vcp>              (Intel)
 2. mxswitch <channel>                or   solaar config '<device>' change-host <host>
    mxswitch <channel>                    solaar config '<device>' change-host <host>
 ```
@@ -272,10 +281,9 @@ decimal, and they are the same value:
 | DisplayPort-1 | 15 | `0x0f` | `15` |
 | HDMI-1 | 17 | `0x11` | `17` |
 
-Find yours with `ddcutil detect` and `ddcutil capabilities`. On macOS, `ddcctl`
-has no way to list displays at all: it takes a number that indexes the displays
-it can see, skipping the built-in one. `odisplay doctor` finds them by asking
-each number in turn whether it answers, which is a read.
+Find yours with `ddcutil detect` and `ddcutil capabilities`, or on macOS with
+`m1ddc display list`, which numbers the external displays from 1 and skips the
+built-in one. `odisplay doctor` reads that same list.
 
 ### Host channels
 

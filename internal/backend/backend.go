@@ -181,6 +181,11 @@ const waitDelay = 2 * time.Second
 // right.
 const probeTimeout = 5 * time.Second
 
+// m1ddcTimeout is generous for a program that only needs to complete one I2C
+// exchange. It lists displays over CoreGraphics and answers in well under a
+// second when the monitor is there.
+const m1ddcTimeout = 5 * time.Second
+
 // Run executes one step and returns its output as a single line, because the
 // panel has one line to show an error in.
 func runStep(ctx context.Context, s Step, timeout time.Duration) (string, error) {

@@ -7,22 +7,82 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 // These only compile and run where Darwin exists. Run them on a Mac:
 //   GOOS=darwin go vet ./...
 
-// The display is always the first step, and the arguments are kfix/ddcctl's own
-// documented form.
-func TestDarwinPlanWritesTheDdcctlInvocation(t *testing.T) {
+// The display step is the first one, and its shape depends on which program
+// this Mac has. m1ddc takes `display <n> set input <vcp>`; ddcctl takes
+// `-d <n> -i <vcp>`. Both get the same number, written the way each wants it.
+func TestDarwinPlanWritesTheMonitorInvocation(t *testing.T) {
 	plan, err := Darwin{Devices: 2}.Plan(1, 17, "3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Step{Bin: ddcctl, Args: []string{"-d", "1", "-i", "17"}}
-	if !reflect.DeepEqual(plan.Steps[0], want) {
-		t.Errorf("monitor step = %+v, want %+v", plan.Steps[0], want)
+	wantM1 := Step{Bin: m1ddc, Args: []string{"display", "1", "set", "input", "17"}}
+	wantDDC := Step{Bin: ddcctl, Args: []string{"-d", "1", "-i", "17"}}
+	got := plan.Steps[0]
+	if !reflect.DeepEqual(got, wantM1) && !reflect.DeepEqual(got, wantDDC) {
+		t.Errorf("monitor step = %+v, want %+v or %+v", got, wantM1, wantDDC)
+	}
+}
+
+// m1ddc is the one that works on Apple Silicon, so it wins when both are
+// installed. ddcctl's DDC calls do nothing there while still reporting success.
+func TestM1DDCIsPreferredOverDdcctl(t *testing.T) {
+	if Installed(m1ddc) && Installed(ddcctl) {
+		if got := monitor(); got != m1ddc {
+			t.Errorf("monitor() = %q, want m1ddc", got)
+		}
+	}
+}
+
+// Whichever is picked, neither being present is an error that names what to
+// install rather than one that names nothing.
+func TestNoMonitorProgramIsRefusedWithAdvice(t *testing.T) {
+	if monitor() != "" {
+		t.Skip("a monitor program is installed here")
+	}
+	if _, err := (Darwin{}).Plan(1, 15, "0"); err == nil {
+		t.Fatal("a plan was built with no program to run")
+	} else if !strings.Contains(err.Error(), "m1ddc") {
+		t.Errorf("error = %q, want it to name what to install", err)
+	}
+}
+
+// The macOS display list format, pinned to the source it comes from:
+//
+//	writeToStdOut([NSString stringWithFormat:@"[%i] %@ (%@)\n", ...]);
+func TestParsingTheM1DDCDisplayList(t *testing.T) {
+	const real = "[1] DELL S2725DC (0F0E1D2C-1111-2222-3333-444455556666)\n[2] LG HDR 4K (AAAA-...)\n"
+	// The parse lives in listWithM1DDC, which runs the program, so the shape
+	// is checked by driving the same code path with a stub on PATH.
+	t.Setenv("PATH", stubM1DDC(t, real))
+	got, err := listWithM1DDC(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("displays = %d, want 2", len(got))
+	}
+	if got[0].Number != 1 || got[0].Name != "DELL S2725DC" {
+		t.Errorf("first = %+v, want display 1 named DELL S2725DC", got[0])
+	}
+	if !got[0].Usable {
+		t.Error("a listed display must be usable")
+	}
+}
+
+// m1ddc prints nothing parseable and exits zero when there is no external
+// display. An empty list would read as a machine with no monitors, which is a
+// different and wrong thing to say.
+func TestAnUnreadableDisplayListIsRefused(t *testing.T) {
+	t.Setenv("PATH", stubM1DDC(t, ""))
+	if _, err := listWithM1DDC(context.Background()); err == nil {
+		t.Error("an empty listing was accepted as no displays")
 	}
 }
 
@@ -150,6 +210,24 @@ func TestDarwinDetectReportsAMissingDdcctl(t *testing.T) {
 	if _, err := d.Detect(context.Background()); err == nil {
 		t.Skip("ddcctl is installed here")
 	}
+}
+
+// stubM1DDC puts a fake m1ddc on PATH that prints body, and points the
+// resolved path at it.
+func stubM1DDC(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "m1ddc")
+	content := "#!/bin/sh\ncat <<'EOF'\n" + body + "EOF\n"
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// listWithM1DDC runs the resolved absolute path, which was worked out at
+	// package init, so point it at the stub for this test.
+	saved := m1ddc
+	m1ddc = script
+	t.Cleanup(func() { m1ddc = saved })
+	return dir
 }
 
 func TestNewReturnsTheDarwinBackend(t *testing.T) {
