@@ -115,36 +115,30 @@ go build -o /usr/local/bin/odisplay ./cmd/odisplay
 
 ### macOS
 
-Needs [ddcctl](https://github.com/waydabber/BetterDisplay) for the monitor and
-[logi-gate](https://github.com/athio/logi-gate) for the devices.
+Needs [ddcctl](https://github.com/kfix/ddcctl) for the monitor and
+[mxswitch](https://github.com/marcocosta97/mxswitch) for the devices.
 
 ```sh
-go build -o /usr/local/bin/odisplay ./cmd/odisplay
+brew install ddcctl
+git clone https://github.com/marcocosta97/mxswitch
+cd mxswitch && make && make install PREFIX="$HOME/.local"
 ```
 
-`logi-gate` sends HID reports itself rather than going through the Logi Options+
-SDK, which is what makes it work without Options+ running. It needs its HID
-engine installed once, under a passwordless sudoers rule:
+`brew` puts ddcctl in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin`
+on Intel. Both are looked for, so it does not matter which you have.
+
+mxswitch sends the HID++ ChangeHost command directly, so Logi Options+ does not
+need to be running. macOS requires **Input Monitoring** for it, which
+`make install` offers to grant. Keep `codesign -s -` in the build: macOS
+identifies an unsigned binary by path *and* code hash, so an unsigned rebuild
+silently loses its permission.
+
+Then check the machine is ready. Neither of these touches a display:
 
 ```sh
-sudo logi-gate install
+mxswitch --info
+odisplay doctor
 ```
-
-`ddcctl` needs monitor access, which on macOS is a TCC permission rather than a
-setting. If it reports no display, grant it in System Settings → Privacy &
-Security → Accessibility, or run it once from Terminal and accept the prompt.
-
-### Key on a Mac
-
-Both at once, from a shell or a hotkey launcher:
-
-```sh
-odisplay switch dp
-```
-
-Or from a menu bar app built on this, which calls the same code and gets the same
-ordering. Binding `plan` instead of `switch` gives you a dry run from the menu,
-which is the one to use until you have done it a few times by hand.
 
 ## How it works
 
@@ -152,15 +146,21 @@ which is the one to use until you have done it a few times by hand.
 
 ```
 1. ddcctl -d <display> -i <vcp>     or   ddcutil setvcp 60 0x?? --display <n>
-2. logi-gate <host>                 or   solaar config '<device>' change-host <host>
-                                      solaar config '<device>' change-host <host>
+2. mxswitch <channel>                or   solaar config '<device>' change-host <host>
+   mxswitch <channel>                    solaar config '<device>' change-host <host>
 ```
 
 The monitor is step 1, always. If it fails the run stops there and exits 2. On
 Linux the devices get one Solaar call each, because Solaar matches a device name
 exactly and a name that does not match is an error rather than a silent no-op.
 The mouse is listed last, so the pointer is still here if the keyboard move is
-what went wrong. On macOS `logi-gate` moves every paired device in one call.
+what went wrong.
+
+**macOS does not get that guarantee.** mxswitch takes no device name: it picks the
+device itself, preferring a mouse over a keyboard, and moves one per call. So the
+mouse goes first there, whatever order the steps are planned in. The number of
+calls comes from how many devices are in the config; the names in it are Solaar's
+and are unused on macOS.
 
 ### One number, two spellings
 
@@ -208,7 +208,7 @@ machine that both are paired with.
 ```
 
 `devices` is the exact names Solaar prints, keyboard first and mouse last. Get
-them from `solaar show`. macOS ignores this list, because `logi-gate` takes no
+them from `solaar show`. macOS reads only how many there are, because mxswitch takes no
 names.
 
 `display` is ddcutil's own index from `ddcutil detect`, not the one your
@@ -227,11 +227,27 @@ in your session can change what a program name resolves to.
 Each call has a timeout, because `ddcutil` can hang when an I2C adapter goes
 away underneath it and Solaar waits on a device that may be asleep.
 
+## Status
+
+**Linux is tested on real hardware.** **macOS is not.** The macOS code compiles,
+vets and has tests, but no Mac has ever run it. Everything said about ddcctl is
+checked against its own documentation; everything said about mxswitch is checked
+against its README and its macOS source, not against a device.
+
+Two things to expect on first run there:
+
+- ddcctl needs a TCC grant (Accessibility, or Input Monitoring) before it can
+  reach a display. Until then it fails and a switch stops at step 1 with the
+  devices left alone, which is the safe direction.
+- mxswitch sends the mouse before the keyboard, because it picks the device
+  itself. The mouse-last ordering this tool is built around does not hold there.
+
 ## Development
 
 ```sh
 go test ./...              # runs on Linux
 GOOS=darwin go vet ./...   # checks the macOS half compiles
+go test -race ./...        # both streams of a child are written from two goroutines
 ```
 
 The argument arrays are asserted literally in `internal/backend/*_test.go`. If a
