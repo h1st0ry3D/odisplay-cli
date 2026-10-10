@@ -1,0 +1,7 @@
+# Built binaries
+/odisplay
+/dist/
+
+# Go
+*.test
+*.out
