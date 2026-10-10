@@ -172,11 +172,14 @@ const (
 // holding open.
 const waitDelay = 2 * time.Second
 
-// probeTimeout is how long a single "is this display there" read gets. Short,
-// because it runs once per number and the answer is only ever advisory: a
-// monitor that is slow to answer is not wrong, and doctor says so rather than
-// waiting on it.
-const probeTimeout = 3 * time.Second
+// probeTimeout is how long a single "is this display there" read gets.
+//
+// A working DDC read comes back in well under a second; one that is going to
+// fail hangs until it is stopped. So this is a ceiling rather than a budget,
+// and it is generous enough that a merely slow monitor is not reported as
+// absent, which would send someone looking for a number when the number is
+// right.
+const probeTimeout = 5 * time.Second
 
 // Run executes one step and returns its output as a single line, because the
 // panel has one line to show an error in.

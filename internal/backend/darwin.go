@@ -188,10 +188,19 @@ func (d Darwin) Detect(ctx context.Context) ([]Display, error) {
 		default:
 			// The number may well be right; the monitor is what did not
 			// answer. Saying it does not exist would send someone looking for
-			// a number when the problem is the cable or the port.
+			// a number when the problem is elsewhere.
+			//
+			// Two causes, most likely first. A monitor usually only accepts
+			// DDC on the input it is currently showing, so a machine whose
+			// input is not on screen cannot command it: the channel is there
+			// but the monitor is not listening on it. Only then is the port
+			// worth suspecting.
 			d.Usable = false
-			d.Why = "the monitor did not answer. On Apple Silicon some ports " +
-				"have no working DDC path; try a Thunderbolt or USB-C cable"
+			d.Why = "the monitor did not answer. It usually only accepts DDC on " +
+				"the input it is showing, so switch it to this machine's input " +
+				"and look again. If it still does not answer, the port is the " +
+				"likely cause: on Apple Silicon a built-in HDMI port often has " +
+				"no working DDC path"
 		}
 		out = append(out, d)
 	}
