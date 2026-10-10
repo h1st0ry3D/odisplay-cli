@@ -28,7 +28,8 @@ ordering.
 | `odisplay switch <input> --dry-run` | Print the commands, run none of them |
 | `odisplay plan <input>` | The same dry run, as a name you can bind to a key |
 | `odisplay list` | Show the configured inputs |
-| `odisplay doctor` | Check the programs this needs are installed |
+| `odisplay list --json` | The same, for a program to read rather than a person |
+| `odisplay doctor` | Check the programs this needs are installed, and that the display number is one this machine has |
 | `odisplay set name <input> <name>` | Rename a button |
 | `odisplay set host <input> <0-3>` | Set the Easy-Switch channel |
 | `odisplay set display <n>` | Set the ddcutil display number |
@@ -103,42 +104,98 @@ stops working.
 saying `ready`, so `odisplay doctor && odisplay switch dp` does the right thing
 when the check did not run.
 
+## Dependencies
+
+`odisplay` itself has **no dependencies outside the Go standard library**. There is nothing to
+`go get`, no `go.sum`, and no vendor directory. It shells out to other programs, and those are what
+it needs:
+
+| | Program | For | Required |
+|---|---|---|---|
+| Linux | [`ddcutil`](https://github.com/rockowitz/ddcutil) | Moving the monitor | Yes |
+| Linux | [`solaar`](https://pwr-solaar.github.io/Solaar/) | Moving the keyboard and mouse | Only if you use the Easy-Switch hosts |
+| macOS | [`ddcctl`](https://github.com/kfix/ddcctl) | Moving the monitor | Yes |
+| macOS | [`mxswitch`](https://github.com/marcocosta97/mxswitch) | Moving the keyboard and mouse | Only if you use the Easy-Switch hosts |
+
+The optional one is genuinely optional. Without Solaar, every display switch still works; a switch
+that asks for a host exits 4 and says the program is missing, and the devices stay where they are.
+
+Each program is looked for at a fixed set of absolute paths, never through `PATH`, so nothing in
+your session can change what a name resolves to.
+
 ## Install
+
+### Build
+
+Needs Go 1.22 or newer. There is nothing to download alongside it.
+
+```sh
+git clone https://github.com/h1st0ry3D/odisplay-cli
+cd odisplay-cli
+```
 
 ### Linux
 
-Needs `ddcutil` and `solaar`. Put the binary somewhere on your `PATH`:
-
 ```sh
-go build -o /usr/local/bin/odisplay ./cmd/odisplay
+# Arch, on Omarchy or anything else using it:
+omarchy pkg add ddcutil
+omarchy pkg add solaar        # only if you want the Easy-Switch hosts
+
+go build -trimpath -o ~/.local/bin/odisplay ./cmd/odisplay
 ```
+
+`/usr/local/bin` works too if you would rather have it system-wide, though that needs `sudo`. If you
+are installing it for the [Omarchy panel](https://github.com/h1st0ry3D/odisplay), put it in one of
+those two places: the panel looks in `/usr/local/bin` first and `~/.local/bin` second, so both work
+with no configuration.
+
+The config is created on first write, at `~/.config/odisplay/odisplay.json`. Until then `odisplay`
+uses the built-in defaults for a Dell S2725DC, which is a reasonable starting point to look at
+before editing.
 
 ### macOS
 
-Needs [ddcctl](https://github.com/kfix/ddcctl) for the monitor and
-[mxswitch](https://github.com/marcocosta97/mxswitch) for the devices.
-
 ```sh
 brew install ddcctl
+```
+
+And for the keyboard and mouse, [mxswitch](https://github.com/marcocosta97/mxswitch), which sends
+the HID++ ChangeHost command itself so Logi Options+ does not have to be running:
+
+```sh
 git clone https://github.com/marcocosta97/mxswitch
 cd mxswitch && make && make install PREFIX="$HOME/.local"
 ```
 
-`brew` puts ddcctl in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin`
-on Intel. Both are looked for, so it does not matter which you have.
+`brew` puts ddcctl in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel. Both are
+looked for, so it does not matter which you have.
 
-mxswitch sends the HID++ ChangeHost command directly, so Logi Options+ does not
-need to be running. macOS requires **Input Monitoring** for it, which
-`make install` offers to grant. Keep `codesign -s -` in the build: macOS
-identifies an unsigned binary by path *and* code hash, so an unsigned rebuild
-silently loses its permission.
+mxswitch needs **Input Monitoring** from macOS, which `make install` offers to grant. Keep the
+`codesign -s -` step in the build: macOS identifies an unsigned binary by path *and* code hash, so
+an unsigned rebuild silently loses the permission it had.
 
-Then check the machine is ready. Neither of these touches a display:
+Then:
 
 ```sh
-mxswitch --info
-odisplay doctor
+go build -trimpath -o ~/.local/bin/odisplay ./cmd/odisplay
 ```
+
+### Check
+
+None of these touch a display:
+
+```sh
+odisplay doctor        # programs present, and the display number is one that works
+mxswitch --info        # macOS only: does it see the keyboard and mouse
+```
+
+`doctor` is worth reading before the first switch. See
+[the display number](#the-display-number) for what it is telling you.
+
+### Removing it
+
+Delete the binary and, if you want the settings gone too, `~/.config/odisplay/odisplay.json`.
+Nothing else is written anywhere.
 
 ## How it works
 
@@ -161,6 +218,38 @@ device itself, preferring a mouse over a keyboard, and moves one per call. So th
 mouse goes first there, whatever order the steps are planned in. The number of
 calls comes from how many devices are in the config; the names in it are Solaar's
 and are unused on macOS.
+
+### The display number
+
+`display` in the config is ddcutil's own index, not the connector name your
+compositor uses, and it is not something you can guess:
+
+```sh
+odisplay doctor
+```
+
+```
+displays (the config says 1):
+  (not addressable) card1-eDP-1    This is a laptop display.  Laptop displays do not support DDC/CI.
+* display 1   card2-DP-6
+
+ready.
+```
+
+ddcutil numbers the displays it will accept and gives a connector it rejects no
+number at all. A laptop panel therefore does not push your monitor up by one.
+`doctor` reads those numbers rather than counting lines, which is the difference
+between "display 1" and a display that does not exist.
+
+It is not stable forever. A monitor that stops answering over I2C drops out of
+the list and the others are renumbered, at which point `switch` fails with exit
+2 and the devices are left alone. Run `doctor` when a switch stops working.
+
+Set it with:
+
+```sh
+odisplay set display 1
+```
 
 ### One number, two spellings
 
