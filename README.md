@@ -121,7 +121,15 @@ The optional one is genuinely optional. Without Solaar, every display switch sti
 that asks for a host exits 4 and says the program is missing, and the devices stay where they are.
 
 Each program is looked for at a fixed set of absolute paths, never through `PATH`, so nothing in
-your session can change what a name resolves to.
+your session can change what a name resolves to:
+
+| Platform | Directories, in order |
+|---|---|
+| Linux | `/usr/bin`, `/bin` |
+| macOS | `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `~/.local/bin` for the two that are often built by hand |
+
+`odisplay doctor` prints the path it resolved for each program, so which one it found — or that it
+found none — is answerable without guessing.
 
 ## Install
 
@@ -168,7 +176,8 @@ cd mxswitch && make && make install PREFIX="$HOME/.local"
 ```
 
 `brew` puts ddcctl in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel. Both are
-looked for, so it does not matter which you have.
+looked for, so it does not matter which you have — and neither does a hand-built one in
+`~/.local/bin`, which is where mxswitch's own `make install` puts it.
 
 mxswitch needs **Input Monitoring** from macOS, which `make install` offers to grant. Keep the
 `codesign -s -` step in the build: macOS identifies an unsigned binary by path *and* code hash, so

@@ -176,3 +176,63 @@ func TestDarwinRefusesAChannelOutsideOneToThree(t *testing.T) {
 		}
 	}
 }
+
+// A no-sudo install puts these in the user's own bin, and that is exactly what
+// the instructions for mxswitch say to do:
+//
+//	make install PREFIX="$HOME/.local"   ->  ~/.local/bin/mxswitch
+//
+// Leaving that directory out reported a program installed as documented as not
+// installed at all. ddcctl had been put there by hand for the same reason.
+func TestSearchDirsIncludeTheUsersOwnBin(t *testing.T) {
+	t.Setenv("HOME", "/Users/someone")
+	dirs := searchDirs()
+
+	want := "/Users/someone/.local/bin"
+	found := false
+	for _, d := range dirs {
+		if d == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("searchDirs() = %v, want %s among them", dirs, want)
+	}
+
+	// Homebrew on Apple Silicon, Homebrew on Intel, and the system, because a
+	// machine can have any of them.
+	for _, d := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"} {
+		ok := false
+		for _, got := range dirs {
+			if got == d {
+				ok = true
+			}
+		}
+		if !ok {
+			t.Errorf("searchDirs() = %v, want %s among them", dirs, d)
+		}
+	}
+}
+
+// The order matters for the message when nothing is found: it names the first
+// place it looked, which should be the one most people would try.
+func TestSearchDirsPutHomebrewFirst(t *testing.T) {
+	t.Setenv("HOME", "/Users/someone")
+	if got := searchDirs()[0]; got != "/opt/homebrew/bin" {
+		t.Errorf("first search directory = %q, want /opt/homebrew/bin", got)
+	}
+}
+
+// No HOME is not a reason to search nowhere.
+func TestSearchDirsSurviveNoHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	dirs := searchDirs()
+	if len(dirs) < 3 {
+		t.Errorf("searchDirs() = %v, want the system directories at least", dirs)
+	}
+	for _, d := range dirs {
+		if d == "" || d == "/.local/bin" {
+			t.Errorf("searchDirs() = %v, has a nonsense entry", dirs)
+		}
+	}
+}

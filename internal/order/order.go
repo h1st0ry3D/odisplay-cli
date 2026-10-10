@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/h1st0ry3D/odisplay-cli/internal/backend"
 	"github.com/h1st0ry3D/odisplay-cli/internal/config"
@@ -74,10 +75,15 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 	// Step 0 is always the monitor. Nothing after it runs unless it succeeded.
 	if err := b.Run(ctx, plan.Steps[0]); err != nil {
 		if errors.Is(err, backend.ErrMissing) {
+			// Named from the step that failed rather than written down here.
+			// This said "ddcutil" on every platform, which on a Mac sent
+			// someone looking for a Linux program they had never heard of
+			// while the one they had installed was the one being missed.
 			return Result{
-				Code:    CodeMissing,
-				Message: "ddcutil is not installed, so the display cannot be moved.",
-				Detail:  err.Error(),
+				Code: CodeMissing,
+				Message: fmt.Sprintf("%s is not installed, so the display cannot be moved.",
+					filepath.Base(plan.Steps[0].Bin)),
+				Detail: err.Error(),
 			}
 		}
 		return Result{
@@ -93,9 +99,10 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 				// The monitor moved and the devices did not, so the user is now
 				// looking at the other machine without input.
 				return Result{
-					Code:    CodeMissing,
-					Message: fmt.Sprintf("Sent %s, but the Easy-Switch program is not installed, so your keyboard and mouse stayed here.", label),
-					Detail:  err.Error(),
+					Code: CodeMissing,
+					Message: fmt.Sprintf("Sent %s, but %s is not installed, so your keyboard and mouse stayed here.",
+						label, filepath.Base(step.Bin)),
+					Detail: err.Error(),
 				}
 			}
 			return Result{

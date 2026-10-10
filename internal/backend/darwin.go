@@ -21,9 +21,32 @@ import (
 // They are resolved to absolute paths here rather than left to PATH at exec
 // time, so nothing in the session can change what a name resolves to later.
 var (
-	ddcctl   = mustFind("ddcctl", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
-	mxswitch = mustFind("mxswitch", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/usr/local/sbin")
+	ddcctl   = mustFind("ddcctl", searchDirs()...)
+	mxswitch = mustFind("mxswitch", searchDirs()...)
 )
+
+// searchDirs is where both programs are looked for, in order.
+//
+// It has to include the user's own bin, because that is where a no-sudo install
+// goes and it is where the instructions for mxswitch put it:
+//
+//	make install PREFIX="$HOME/.local"     ->  ~/.local/bin/mxswitch
+//
+// Leaving it out meant a program installed exactly as documented was reported
+// as not installed at all, while the error named a different program again.
+// The odisplay program itself is looked for in the same three places, so this
+// is one rule rather than a second one that can drift.
+func searchDirs() []string {
+	dirs := []string{
+		"/opt/homebrew/bin", // Homebrew on Apple Silicon
+		"/usr/local/bin",    // Homebrew on Intel, and a sudo make install
+		"/usr/bin",
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		dirs = append(dirs, filepath.Join(home, ".local", "bin"))
+	}
+	return dirs
+}
 
 // mustFind returns the first candidate that exists and is executable, or the
 // first candidate, so a missing program is reported by name at the point of use

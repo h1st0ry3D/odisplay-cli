@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -212,5 +213,78 @@ func TestEmptyPlanRunsNothing(t *testing.T) {
 	}
 	if len(f.ran) != 0 {
 		t.Errorf("ran %v", f.ran)
+	}
+}
+
+// The message has to name the program that is actually missing.
+//
+// It said "ddcutil" on every platform. On a Mac that sent someone looking for a
+// Linux program they had never heard of, while the one they had in fact
+// installed — ddcctl — was the one being missed. A wrong name here costs more
+// than a wrong name usually does, because it is read at the moment nothing
+// works and the obvious next step is to go and install the wrong thing.
+func TestTheMissingProgramIsNamedFromTheStepThatFailed(t *testing.T) {
+	cases := []struct {
+		bin  string
+		want string
+	}{
+		{"/usr/bin/ddcutil", "ddcutil"},
+		{"/opt/homebrew/bin/ddcctl", "ddcctl"},
+		{"/usr/local/bin/ddcctl", "ddcctl"},
+	}
+	for _, c := range cases {
+		f := &fake{
+			plan: backend.Plan{Platform: "test", Steps: []backend.Step{
+				{Bin: c.bin, Args: []string{"-d", "1"}},
+			}},
+			// The real backend wraps the sentinel with the binary it tried,
+			// which is where the path in the detail comes from.
+			runErr: map[int]error{
+				0: fmt.Errorf("%s: %w", c.bin, backend.ErrMissing),
+			},
+		}
+		res := Switch(context.Background(), f, cfgWith("0"), "dp", false)
+		if res.Code != CodeMissing {
+			t.Fatalf("%s: code = %d, want %d", c.bin, res.Code, CodeMissing)
+		}
+		if !strings.Contains(res.Message, c.want) {
+			t.Errorf("%s: message = %q, want it to name %s", c.bin, res.Message, c.want)
+		}
+		// And it must not name a program that is not the one that failed.
+		other := "ddcutil"
+		if c.want == "ddcutil" {
+			other = "ddcctl"
+		}
+		if strings.Contains(res.Message, other) {
+			t.Errorf("%s: message = %q, want it not to name %s", c.bin, res.Message, other)
+		}
+		// The path is in the detail, so where it looked is answerable from the
+		// output rather than by guessing.
+		if !strings.Contains(res.Detail, c.bin) {
+			t.Errorf("%s: detail = %q, want the path it looked for", c.bin, res.Detail)
+		}
+	}
+}
+
+// The device half has the same rule: name the program, not a category.
+func TestTheMissingDeviceProgramIsNamedToo(t *testing.T) {
+	f := &fake{
+		plan: backend.Plan{Platform: "test", Steps: []backend.Step{
+			{Bin: "/opt/homebrew/bin/ddcctl", Args: []string{"-d", "1", "-i", "15"}},
+			{Bin: "/usr/local/bin/mxswitch", Args: []string{"2"}},
+		}},
+		runErr: map[int]error{
+			1: fmt.Errorf("%s: %w", "/usr/local/bin/mxswitch", backend.ErrMissing),
+		},
+	}
+	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
+	if res.Code != CodeMissing {
+		t.Fatalf("code = %d, want %d", res.Code, CodeMissing)
+	}
+	if !strings.Contains(res.Message, "mxswitch") {
+		t.Errorf("message = %q, want it to name mxswitch", res.Message)
+	}
+	if !strings.Contains(res.Message, "stayed here") {
+		t.Errorf("message = %q, want it to say where the keyboard is", res.Message)
 	}
 }
