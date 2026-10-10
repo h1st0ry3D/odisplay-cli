@@ -272,8 +272,10 @@ decimal, and they are the same value:
 | DisplayPort-1 | 15 | `0x0f` | `15` |
 | HDMI-1 | 17 | `0x11` | `17` |
 
-Find yours with `ddcutil detect` and `ddcutil capabilities`, or `ddcctl -m` on
-macOS.
+Find yours with `ddcutil detect` and `ddcutil capabilities`. On macOS, `ddcctl`
+has no way to list displays at all: it takes a number that indexes the displays
+it can see, skipping the built-in one. `odisplay doctor` finds them by asking
+each number in turn whether it answers, which is a read.
 
 ### Host channels
 

@@ -172,6 +172,12 @@ const (
 // holding open.
 const waitDelay = 2 * time.Second
 
+// probeTimeout is how long a single "is this display there" read gets. Short,
+// because it runs once per number and the answer is only ever advisory: a
+// monitor that is slow to answer is not wrong, and doctor says so rather than
+// waiting on it.
+const probeTimeout = 3 * time.Second
+
 // Run executes one step and returns its output as a single line, because the
 // panel has one line to show an error in.
 func runStep(ctx context.Context, s Step, timeout time.Duration) (string, error) {

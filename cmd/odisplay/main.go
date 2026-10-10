@@ -240,16 +240,25 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 			fmt.Fprintf(out, "%sdisplay %-3d %s\n", mark, d.Number, d.Name)
 			continue
 		}
-		// ddcutil gives no number to a display it will not accept, so this one
-		// cannot be reached with --display however the config is set.
+		if d.Number > 0 {
+			// Numbered but not answering. The number may well be right;
+			// saying it does not exist would send someone looking for a
+			// different number when the problem is the port or the cable.
+			fmt.Fprintf(out, "  display %-3d %s\n", d.Number, d.Why)
+			continue
+		}
+		// A connector the program rejected outright, which is the Linux case:
+		// it numbers what it accepts and gives no number to what it does not.
 		fmt.Fprintf(out, "  (not addressable) %-14s %s\n", d.Name, d.Why)
 	}
 
 	if !chosen {
-		fmt.Fprintf(out, "\ndisplay %d is not one ddcutil will accept, so every switch would do nothing.\n", cfg.DisplayNumber())
+		fmt.Fprintf(out, "\ndisplay %d is not one this machine accepts, so every switch would do nothing.\n", cfg.DisplayNumber())
 		usable := backend.Addressable(displays)
 		if len(usable) == 0 {
 			fmt.Fprintln(out, "No display on this machine can be switched right now.")
+			fmt.Fprintln(out, "If the monitor is on, this is usually the connection:")
+			fmt.Fprintln(out, "on Apple Silicon, a built-in HDMI port often has no working DDC path.")
 		} else {
 			fmt.Fprintf(out, "Display %d (%s) is. Set it with `odisplay set display %d`.\n",
 				usable[0].Number, usable[0].Name, usable[0].Number)

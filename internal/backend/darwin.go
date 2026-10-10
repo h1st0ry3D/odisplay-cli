@@ -4,7 +4,6 @@ package backend
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -145,39 +144,68 @@ func New(devices []string) Backend {
 	return Darwin{Devices: count}
 }
 
-// Detect lists what ddcctl can see. It reads the monitor's identity and changes
-// nothing.
+// ProbeLimit is how many display numbers Detect will try.
 //
-// ddcctl prints one line per display with its number in front, so the number is
-// read rather than assumed.
+// ddcctl has no way to list displays. It takes a number that indexes the
+// displays it can see, skipping the built-in one, and a number above that count
+// is simply refused. So the list is found by asking each number in turn whether
+// it answers, which is a read: `-i ?` queries the input source and writes
+// nothing.
+const ProbeLimit = 4
+
+// ddcctl has no listing mode. There is no flag for it: the arguments are the
+// settings to change, and `-d` only selects which display to change them on. An
+// earlier version of this ran `ddcctl -m` expecting a list, which is the mute
+// command, and hung until the timeout stopped it.
+//
+// So the displays are discovered by asking each number whether it answers.
+// Three outcomes are told apart, because they need different fixes:
+//
+//	answers          the number works and the monitor speaks DDC
+//	refused          no such number, so a lower one is right
+//	no answer        the number may be right but the monitor is not replying
+//
+// The last is the Apple Silicon case, where some ports have no working DDC path
+// at all, and it is worth saying so rather than reporting the number as wrong.
 func (d Darwin) Detect(ctx context.Context) ([]Display, error) {
-	text, err := runStepRaw(ctx, Step{Bin: ddcctl, Args: []string{"-m"}}, ddcTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("ddcctl -m: %w", err)
-	}
 	var out []Display
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+	for n := 1; n <= ProbeLimit; n++ {
+		text, err := runStepRaw(ctx, Step{
+			Bin:  ddcctl,
+			Args: []string{"-d", strconv.Itoa(n), "-i", "?"},
+		}, probeTimeout)
+
+		d := Display{Number: n, Name: "ddcctl display " + strconv.Itoa(n)}
+		switch {
+		case err == nil && strings.Contains(text, "0x60"):
+			d.Usable = true
+			d.Name = describeInput(text)
+		case err != nil && strings.Contains(text+err.Error(), "Usage"):
+			// ddcctl prints its help when the number is past the end of its
+			// own list, so this number does not exist on this machine.
+			d.Usable = false
+			d.Why = "ddcctl has no display with this number"
+		default:
+			// The number may well be right; the monitor is what did not
+			// answer. Saying it does not exist would send someone looking for
+			// a number when the problem is the cable or the port.
+			d.Usable = false
+			d.Why = "the monitor did not answer. On Apple Silicon some ports " +
+				"have no working DDC path; try a Thunderbolt or USB-C cable"
 		}
-		num, name, ok := strings.Cut(line, ")")
-		if !ok {
-			continue
-		}
-		n, err := strconv.Atoi(strings.TrimSpace(num))
-		if err != nil {
-			continue
-		}
-		out = append(out, Display{
-			Number: n,
-			Name:   strings.TrimSpace(name),
-			// ddcctl lists what it can see rather than what can do DDC, so
-			// this cannot say no. Saying yes for a display that cannot switch
-			// would send the user off chasing a problem doctor cannot name, so
-			// Where is left to the actual switch to report.
-			Usable: true,
-		})
+		out = append(out, d)
 	}
 	return out, nil
+}
+
+// describeInput pulls the readable part out of a `-i ?` reply, so a display is
+// labelled by the input it is on rather than by its number twice.
+func describeInput(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "Input Source") {
+			return strings.Join(strings.Fields(line), " ")
+		}
+	}
+	return "ddcctl display"
 }
