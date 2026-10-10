@@ -9,6 +9,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -64,6 +65,7 @@ func usage(w io.Writer) {
   odisplay switch <input> [--dry-run]   move the monitor, then the keyboard and mouse
   odisplay plan <input>                 print the commands without running them
   odisplay list                         show the configured inputs
+  odisplay list --json                  the same, for the panel to read
   odisplay doctor                       check the programs this needs are installed
   odisplay set name <input> <name>
   odisplay set host <input> <0-3>
@@ -246,14 +248,34 @@ func cmdDoctor(ctx context.Context, args []string, out *bufio.Writer, errOut *os
 }
 
 func cmdList(args []string, out *bufio.Writer, errOut *os.File) int {
-	if len(args) != 0 {
-		fmt.Fprintln(errOut, "list takes no arguments")
+	// --json is how the panel reads its settings. It prints the config as it
+	// stands after validation, so the panel renders exactly the numbers that
+	// would be sent, rather than reimplementing the rules that decide them.
+	asJSON := false
+	for _, a := range args {
+		if a == "--json" {
+			asJSON = true
+			continue
+		}
+		fmt.Fprintf(errOut, "unknown option %q for list\n", a)
 		return order.CodeUsage
 	}
+
 	cfg, ok := load(errOut)
 	if !ok {
 		return order.CodeUsage
 	}
+
+	if asJSON {
+		raw, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			fmt.Fprintln(errOut, err)
+			return order.CodeUsage
+		}
+		fmt.Fprintln(out, string(raw))
+		return order.CodeOK
+	}
+
 	if path, err := config.Path(); err == nil {
 		fmt.Fprintf(out, "config: %s\n", path)
 	}

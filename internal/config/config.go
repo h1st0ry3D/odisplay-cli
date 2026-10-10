@@ -130,6 +130,18 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return cfg, fmt.Errorf("read %s: %w", path, err)
 	}
+
+	// encoding/json decodes an array element by element into the slice it is
+	// given, merging fields rather than replacing them. Unmarshalling over the
+	// defaults therefore gave every input the default name at its own
+	// position: a file listing only dp and hdmi named them "USB-C" and
+	// "DisplayPort". Start from nothing so the file is the whole truth.
+	//
+	// Devices is left alone. It is a list of plain strings with nothing to
+	// merge, and a file that does not mention devices is better served by the
+	// defaults than by none.
+	cfg.Inputs = nil
+
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return cfg, fmt.Errorf("%s will not parse: %w", path, err)
 	}

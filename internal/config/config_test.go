@@ -186,3 +186,82 @@ func TestBrokenFileDoesNotResolveToDefaults(t *testing.T) {
 		t.Error("the broken value leaked through, so it looks like the real config")
 	}
 }
+
+// encoding/json merges a JSON array into the slice it is given, field by field
+// rather than replacing it. Unmarshalling over the defaults therefore handed
+// every input the default name at its own position, so a file listing only dp
+// and hdmi called them "USB-C" and "DisplayPort".
+//
+// A name belonging to one input must never turn up on another.
+func TestAnAbsentNameDoesNotComeFromTheDefault(t *testing.T) {
+	path := write(t, `{"version":1,"inputs":[
+		{"key":"dp","vcp":15},
+		{"key":"hdmi","vcp":17}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Inputs) != 2 {
+		t.Fatalf("inputs = %d, want only the 2 in the file", len(cfg.Inputs))
+	}
+	// The defaults have usbc first, so position 0 used to inherit "USB-C".
+	for _, in := range cfg.Inputs {
+		if in.Name != "" {
+			t.Errorf("%s picked up the name %q from the defaults", in.Key, in.Name)
+		}
+	}
+}
+
+func TestInputsComeOnlyFromTheFile(t *testing.T) {
+	path := write(t, `{"version":1,"display":2,"inputs":[{"key":"hdmi","vcp":17,"host":"2"}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Inputs) != 1 || cfg.Inputs[0].Key != "hdmi" {
+		t.Fatalf("inputs = %+v, want just hdmi", cfg.Inputs)
+	}
+	if cfg.Display != 2 {
+		t.Errorf("display = %d, want 2", cfg.Display)
+	}
+}
+
+// A file that says nothing about the devices keeps the defaults, because a
+// missing list would otherwise mean Solaar moves nothing and says so only by
+// failing.
+func TestDevicesKeepTheirDefaultsWhenUnmentioned(t *testing.T) {
+	path := write(t, `{"version":1,"inputs":[{"key":"dp","vcp":15}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Devices) == 0 {
+		t.Error("devices went missing, so the keyboard and mouse would never move")
+	}
+}
+
+// A file with its own device list replaces the defaults rather than merging
+// with them.
+func TestDevicesInTheFileReplaceTheDefaults(t *testing.T) {
+	path := write(t, `{"version":1,"inputs":[{"key":"dp","vcp":15}],"devices":["MX Keys S"]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Devices) != 1 || cfg.Devices[0] != "MX Keys S" {
+		t.Errorf("devices = %q, want just MX Keys S", cfg.Devices)
+	}
+}
+
+// A file with no inputs key means no inputs, not the three defaults: the file is
+// the whole truth once it exists.
+func TestAFileWithNoInputsHasNoInputs(t *testing.T) {
+	path := write(t, `{"version":1,"display":3}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Inputs) != 0 {
+		t.Errorf("inputs = %+v, want none", cfg.Inputs)
+	}
+}
