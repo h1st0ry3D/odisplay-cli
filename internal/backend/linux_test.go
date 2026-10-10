@@ -379,3 +379,49 @@ func TestInstalledAgreesWithWhatRunFinds(t *testing.T) {
 		t.Error("a missing file is not installed")
 	}
 }
+
+// An empty channel means the settings file had no "host" for this input. That
+// used to produce `solaar config '<device>' change-host ”`, which runs, fails,
+// and has already moved the monitor by then. It is refused before the monitor
+// moves instead, which is the direction that costs nobody their keyboard.
+func TestLinuxRefusesAnEmptyChannel(t *testing.T) {
+	l := Linux{Devices: []string{"MX Keys S"}}
+	if _, err := l.Plan(1, 15, ""); err == nil {
+		t.Fatal("an empty channel was accepted")
+	}
+	// And nothing partial comes back with the error.
+	plan, err := l.Plan(1, 15, "")
+	if err != nil && len(plan.Steps) != 0 {
+		t.Errorf("a refused plan has %d steps, want none", len(plan.Steps))
+	}
+}
+
+func TestLinuxRefusesAChannelOutsideOneToThree(t *testing.T) {
+	l := Linux{Devices: []string{"MX Keys S"}}
+	for _, channel := range []string{"4", "9", "-1", "x", " 2", "2 "} {
+		if _, err := l.Plan(1, 15, channel); err == nil {
+			t.Errorf("accepted channel %q", channel)
+		}
+	}
+	// Off is not an error: it means no device step at all.
+	plan, err := l.Plan(1, 15, "0")
+	if err != nil {
+		t.Fatalf("off was refused: %v", err)
+	}
+	if len(plan.Steps) != 1 {
+		t.Errorf("off produced %d steps, want only the monitor", len(plan.Steps))
+	}
+}
+
+// Both backends have to agree about which channels exist, or a settings file
+// that works on one machine refuses on the other.
+func TestBothBackendsAgreeOnChannels(t *testing.T) {
+	for _, channel := range []string{"0", "1", "2", "3", "4", "", "x", "-1"} {
+		err := validChannel(channel)
+		// Only 1, 2 and 3 are channels; the caller handles "0" before this.
+		want := channel == "1" || channel == "2" || channel == "3"
+		if (err == nil) != want {
+			t.Errorf("validChannel(%q) error = %v, want it to be accepted: %v", channel, err, want)
+		}
+	}
+}

@@ -90,9 +90,8 @@ func (d Darwin) Plan(display, vcp int, channel string) (Plan, error) {
 	}
 	// mxswitch takes the channel as a bare argument and accepts only 1, 2 or 3,
 	// so 0 never reaches it: off means this loop does not run.
-	n, err := strconv.Atoi(channel)
-	if err != nil || n < 1 || n > 3 {
-		return Plan{}, fmt.Errorf("channel %q is not one mxswitch accepts: 1, 2 or 3", channel)
+	if err := validChannel(channel); err != nil {
+		return Plan{}, err
 	}
 	for range d.Devices {
 		p.Steps = append(p.Steps, Step{Bin: mxswitch, Args: []string{channel}})

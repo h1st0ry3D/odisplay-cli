@@ -42,6 +42,9 @@ func (l Linux) Plan(display, vcp int, channel string) (Plan, error) {
 	if channel == "0" {
 		return p, nil
 	}
+	if err := validChannel(channel); err != nil {
+		return Plan{}, err
+	}
 	for _, device := range l.Devices {
 		if device == "" {
 			continue

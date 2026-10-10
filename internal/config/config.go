@@ -142,10 +142,12 @@ func Default() Config {
 	return Config{
 		Version: 1,
 		Display: 1,
+		// Host is off for every one of them. Left unset it is the empty
+		// string, which is not a channel and not the same as off.
 		Inputs: []Input{
-			{Key: "usbc", Name: "USB-C", VCP: 27},
-			{Key: "dp", Name: "DisplayPort", VCP: 15},
-			{Key: "hdmi", Name: "HDMI", VCP: 17},
+			{Key: "usbc", Name: "USB-C", VCP: 27, Host: HostOff},
+			{Key: "dp", Name: "DisplayPort", VCP: 15, Host: HostOff},
+			{Key: "hdmi", Name: "HDMI", VCP: 17, Host: HostOff},
 		},
 		Devices: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"},
 	}
@@ -186,6 +188,12 @@ func Load(path string) (Config, error) {
 
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
+		// Validated like a file on disk, because these are what run on a
+		// machine that has never been configured. Returning them unvalidated
+		// is how every input came to carry an empty channel.
+		if err := cfg.Validate(); err != nil {
+			return cfg, err
+		}
 		return cfg, nil
 	}
 	if err != nil {

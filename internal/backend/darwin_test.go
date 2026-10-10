@@ -161,3 +161,18 @@ func TestNewReturnsTheDarwinBackend(t *testing.T) {
 		t.Errorf("Platform() = %q, want darwin", got)
 	}
 }
+
+// The same case the Mac hit: a settings file with no channel for an input.
+func TestDarwinRefusesAnEmptyChannel(t *testing.T) {
+	if _, err := (Darwin{Devices: 1}).Plan(1, 15, ""); err == nil {
+		t.Fatal("an empty channel was accepted")
+	}
+}
+
+func TestDarwinRefusesAChannelOutsideOneToThree(t *testing.T) {
+	for _, channel := range []string{"4", "9", "-1", "x", " 2"} {
+		if _, err := (Darwin{Devices: 1}).Plan(1, 15, channel); err == nil {
+			t.Errorf("accepted channel %q", channel)
+		}
+	}
+}

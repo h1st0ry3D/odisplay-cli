@@ -284,6 +284,26 @@ func flatten(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+// validChannel rejects a value that is not one of the Easy-Switch channels.
+//
+// Off is handled by the caller before this, because off means no device step at
+// all rather than a channel to send. Both backends use this so they cannot
+// disagree about which channels exist.
+//
+// An empty channel reaches here when a settings file has no "host" for an
+// input. That used to become `change-host ”` on Linux: a command that runs,
+// fails, and has already moved the monitor by the time it does. Caught here, it
+// stops before anything runs, which is the direction that costs nobody their
+// keyboard.
+func validChannel(channel string) error {
+	n, err := strconv.Atoi(channel)
+	if err != nil || n < 1 || n > 3 {
+		return fmt.Errorf("channel %q is not one this machine accepts: "+
+			"1, 2 or 3, or 0 to leave the keyboard and mouse alone", channel)
+	}
+	return nil
+}
+
 // validVCP rejects a value that is not an MCCS input source number before it
 // can become an argument.
 func validVCP(vcp int) error {

@@ -501,3 +501,28 @@ func TestResolveDisplayForBothMachines(t *testing.T) {
 		}
 	}
 }
+
+// The defaults are what run on a machine that has never been configured, and
+// they were returned without validation. Every input then carried the empty
+// string as its channel, which is neither off nor a channel: on macOS the
+// backend refused it, and on Linux it became `change-host ”` — a command that
+// runs, fails, and has already moved the monitor by the time it does.
+func TestTheDefaultsAreValidatedToo(t *testing.T) {
+	cfg, err := Load(filepath.Join(t.TempDir(), "never-written.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range cfg.Inputs {
+		if string(in.Host) != HostOff {
+			t.Errorf("%s has channel %q, want %q", in.Key, in.Host, HostOff)
+		}
+	}
+}
+
+func TestDefaultCarriesOffExplicitly(t *testing.T) {
+	for _, in := range Default().Inputs {
+		if in.Host == "" {
+			t.Errorf("%s has an empty channel, which is not the same as off", in.Key)
+		}
+	}
+}
