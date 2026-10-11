@@ -21,6 +21,17 @@ import (
 	"time"
 )
 
+// ErrNothingToDo is a step that had nothing to act on, which is not the same as
+// a step that failed. Only one place produces it: mxswitch, which moves one
+// device per call and reports "no device found" once there are none left. On a
+// machine with two devices that message is the third call saying it is done,
+// not a failure.
+//
+// It is separate from a plain error so the caller can tell "there was nothing
+// left to move" from "this did not work", because reporting the first as the
+// second says the keyboard stayed when it left.
+var ErrNothingToDo = errors.New("nothing left to move")
+
 // ErrMissing reports that a required program is not installed. It is its own
 // error so the CLI can exit with its own code, because "Solaar is not
 // installed" is a different situation from "Solaar said no".

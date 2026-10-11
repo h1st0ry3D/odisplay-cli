@@ -93,8 +93,22 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 		}
 	}
 
+	// moved counts the device steps that did something, which decides how a
+	// step with nothing left to do is read.
+	moved := 0
 	for _, step := range plan.Steps[1:] {
-		if err := b.Run(ctx, step); err != nil {
+		err := b.Run(ctx, step)
+
+		if errors.Is(err, backend.ErrNothingToDo) && moved > 0 {
+			// The devices that were here have all been sent. One platform
+			// moves one per call and says this once there are none left, so
+			// after at least one success this is the end of the sequence
+			// rather than a failure. Reporting it as a failure would say the
+			// keyboard stayed when it had just left.
+			break
+		}
+
+		if err != nil {
 			if errors.Is(err, backend.ErrMissing) {
 				// The monitor moved and the devices did not, so the user is now
 				// looking at the other machine without input.
@@ -111,6 +125,7 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 				Detail:  err.Error(),
 			}
 		}
+		moved++
 	}
 
 	if string(in.Host) == config.HostOff {

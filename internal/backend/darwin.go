@@ -185,8 +185,21 @@ func (d Darwin) Run(ctx context.Context, s Step) error {
 	if s.Bin == mxswitch {
 		timeout = mxswitchTimeout
 	}
-	_, err := runStep(ctx, s, timeout)
+	text, err := runStep(ctx, s, timeout)
+	if err != nil && s.Bin == mxswitch && isNoDevice(text) {
+		// mxswitch says this when it cannot find a device supporting
+		// ChangeHost. There are two reasons and it cannot tell them apart: the
+		// devices have all been moved already, or none can be reached. The
+		// caller knows which, because it knows whether anything has moved yet.
+		return fmt.Errorf("%s: %w", text, ErrNothingToDo)
+	}
+	_ = d
 	return err
+}
+
+// isNoDevice is mxswitch's own wording for finding nothing to move.
+func isNoDevice(text string) bool {
+	return strings.Contains(text, "No Logitech device supporting ChangeHost found")
 }
 
 // New returns the macOS backend. The device names are Solaar's and mean nothing

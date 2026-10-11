@@ -294,3 +294,57 @@ func TestTheMissingDeviceProgramIsNamedToo(t *testing.T) {
 		t.Errorf("message = %q, want it to say where the keyboard is", res.Message)
 	}
 }
+
+// The normal sequence on a platform that moves one device per call: the first
+// step moves one, the second moves another, the third finds nothing left.
+//
+// The third is not a failure. Reporting it as one says the keyboard stayed when
+// it had just left, which is the opposite of what happened.
+func TestAStepWithNothingLeftIsTheEndNotAFailure(t *testing.T) {
+	f := &fake{runErr: map[int]error{2: backend.ErrNothingToDo}}
+	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
+	if res.Code != CodeOK {
+		t.Fatalf("code = %d (%s), want success: the devices were sent", res.Code, res.Message)
+	}
+	if len(f.ran) != 3 {
+		t.Errorf("ran steps %v, want it to stop at the one with nothing to do", f.ran)
+	}
+}
+
+// With nothing moved yet, the same message means something else: no device
+// could be reached at all, and that is worth reporting rather than swallowing.
+func TestNothingToDoWithNothingMovedIsAFailure(t *testing.T) {
+	f := &fake{runErr: map[int]error{1: backend.ErrNothingToDo}}
+	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
+	if res.Code != CodeDevicesFailed {
+		t.Errorf("code = %d, want %d", res.Code, CodeDevicesFailed)
+	}
+	if len(f.ran) != 2 {
+		t.Errorf("ran %v, want it to stop at the first device", f.ran)
+	}
+}
+
+// A real failure still stops the sequence and still says the devices did not
+// move, even when one already has. Half-moved is the case that strands people.
+func TestARealFailureAfterASuccessStillStops(t *testing.T) {
+	f := &fake{runErr: map[int]error{1: errors.New("no such host")}}
+	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
+	if res.Code != CodeDevicesFailed {
+		t.Errorf("code = %d, want %d", res.Code, CodeDevicesFailed)
+	}
+	if len(f.ran) != 2 {
+		t.Errorf("ran %v, want it to stop at the failure", f.ran)
+	}
+	if !strings.Contains(res.Message, "way back") {
+		t.Errorf("message = %q, want it to point at the button", res.Message)
+	}
+}
+
+// And a missing program is still its own code, not swallowed as "nothing to do".
+func TestAMissingProgramIsNotNothingToDo(t *testing.T) {
+	f := &fake{runErr: map[int]error{1: backend.ErrMissing}}
+	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
+	if res.Code != CodeMissing {
+		t.Errorf("code = %d, want %d", res.Code, CodeMissing)
+	}
+}
