@@ -210,6 +210,23 @@ mxswitch --info        # macOS only: does it see the keyboard and mouse
 `doctor` is worth reading before the first switch. See
 [the display number](#the-display-number) for what it is telling you.
 
+### Updating
+
+```sh
+cd odisplay-cli
+git pull
+go build -trimpath -o ~/.local/bin/odisplay ./cmd/odisplay
+```
+
+That is the whole of it: one binary, no service to restart, and nothing else
+reads it. A panel or a menu bar app in front of it picks the new one up the next
+time it runs it, which is why the Omarchy panel does not need restarting for a
+change here -- only for a change to the panel.
+
+Read `odisplay list` afterwards if the update changed anything about settings. It
+is the one place a setting whose only other effect is on a screen can be read
+from a terminal.
+
 ### Removing it
 
 Delete the binary and, if you want the settings gone too, `~/.config/odisplay/odisplay.json`.
