@@ -112,8 +112,8 @@ const mxswitchTimeout = 15 * time.Second
 // keyboard on the second, whatever order these steps run in. So the mouse
 // leaves first on macOS, the reverse of Linux.
 type Darwin struct {
-	// Devices is how many Logitech devices to move. Names are ignored.
-	Devices int
+	// Count is how many Logitech devices to move. Names are ignored.
+	Count int
 }
 
 func (Darwin) Platform() string { return "darwin" }
@@ -165,7 +165,7 @@ func (d Darwin) Plan(display, vcp int, channel string) (Plan, error) {
 	if err := validChannel(channel); err != nil {
 		return Plan{}, err
 	}
-	for range d.Devices {
+	for range d.Count {
 		p.Steps = append(p.Steps, Step{Bin: mxswitch, Args: []string{channel}})
 	}
 	return p, nil
@@ -191,7 +191,7 @@ func New(devices []string) Backend {
 			count++
 		}
 	}
-	return Darwin{Devices: count}
+	return Darwin{Count: count}
 }
 
 // ProbeLimit is how many display numbers Detect will try.

@@ -18,7 +18,7 @@ import (
 // this Mac has. m1ddc takes `display <n> set input <vcp>`; ddcctl takes
 // `-d <n> -i <vcp>`. Both get the same number, written the way each wants it.
 func TestDarwinPlanWritesTheMonitorInvocation(t *testing.T) {
-	plan, err := Darwin{Devices: 2}.Plan(1, 17, "3")
+	plan, err := Darwin{Count: 2}.Plan(1, 17, "3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestDarwinWritesTheValueInDecimal(t *testing.T) {
 }
 
 func TestDarwinHostOffIsOneStep(t *testing.T) {
-	plan, err := Darwin{Devices: 2}.Plan(1, 27, "0")
+	plan, err := Darwin{Count: 2}.Plan(1, 27, "0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestDarwinHostOffIsOneStep(t *testing.T) {
 // mxswitch moves one device per call, so the number of calls is how many
 // devices the config lists.
 func TestDarwinMovesOneStepPerDevice(t *testing.T) {
-	plan, err := Darwin{Devices: 2}.Plan(1, 15, "2")
+	plan, err := Darwin{Count: 2}.Plan(1, 15, "2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestDarwinMovesOneStepPerDevice(t *testing.T) {
 
 // A config with no devices must not silently claim to have moved them.
 func TestDarwinWithNoDevicesMakesNoDeviceSteps(t *testing.T) {
-	plan, err := Darwin{Devices: 0}.Plan(1, 15, "2")
+	plan, err := Darwin{Count: 0}.Plan(1, 15, "2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,9 +140,9 @@ func TestDarwinWithNoDevicesMakesNoDeviceSteps(t *testing.T) {
 // where the devices are still where they are.
 func TestDarwinRefusesAChannelMxswitchWouldReject(t *testing.T) {
 	for _, channel := range []string{"0", "4", "9", "", "x"} {
-		if _, err := (Darwin{Devices: 1}).Plan(1, 15, channel); err == nil {
+		if _, err := (Darwin{Count: 1}).Plan(1, 15, channel); err == nil {
 			// "0" is off, which is not an error, just one step.
-			plan, _ := (Darwin{Devices: 1}).Plan(1, 15, channel)
+			plan, _ := (Darwin{Count: 1}).Plan(1, 15, channel)
 			if channel != "0" {
 				t.Errorf("accepted channel %q", channel)
 			} else if len(plan.Steps) != 1 {
@@ -194,13 +194,13 @@ func TestNewCountsDevicesAndIgnoresTheirNames(t *testing.T) {
 	if !ok {
 		t.Fatalf("New() = %T, want Darwin", d)
 	}
-	if darwin.Devices != 2 {
-		t.Errorf("Devices = %d, want 2", darwin.Devices)
+	if darwin.Count != 2 {
+		t.Errorf("Count = %d, want 2", darwin.Count)
 	}
-	if New([]string{"a", "", "  "}).(Darwin).Devices != 1 {
+	if New([]string{"a", "", "  "}).(Darwin).Count != 1 {
 		t.Error("a blank device name still counted")
 	}
-	if New(nil).(Darwin).Devices != 0 {
+	if New(nil).(Darwin).Count != 0 {
 		t.Error("no devices should mean no device steps")
 	}
 }
@@ -242,14 +242,14 @@ func TestNewReturnsTheDarwinBackend(t *testing.T) {
 
 // The same case the Mac hit: a settings file with no channel for an input.
 func TestDarwinRefusesAnEmptyChannel(t *testing.T) {
-	if _, err := (Darwin{Devices: 1}).Plan(1, 15, ""); err == nil {
+	if _, err := (Darwin{Count: 1}).Plan(1, 15, ""); err == nil {
 		t.Fatal("an empty channel was accepted")
 	}
 }
 
 func TestDarwinRefusesAChannelOutsideOneToThree(t *testing.T) {
 	for _, channel := range []string{"4", "9", "-1", "x", " 2"} {
-		if _, err := (Darwin{Devices: 1}).Plan(1, 15, channel); err == nil {
+		if _, err := (Darwin{Count: 1}).Plan(1, 15, channel); err == nil {
 			t.Errorf("accepted channel %q", channel)
 		}
 	}
@@ -311,6 +311,14 @@ func TestSearchDirsSurviveNoHome(t *testing.T) {
 	for _, d := range dirs {
 		if d == "" || d == "/.local/bin" {
 			t.Errorf("searchDirs() = %v, has a nonsense entry", dirs)
+		}
+	}
+}
+
+func TestParsingMxswitchListWithNone(t *testing.T) {
+	for _, text := range []string{"", "\n", "0xFF00:0x0001  in=20  USB Receiver\n"} {
+		if got := parseMxswitchList(text); len(got) != 0 {
+			t.Errorf("parseMxswitchList(%q) = %v, want none", text, got)
 		}
 	}
 }

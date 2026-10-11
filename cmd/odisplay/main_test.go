@@ -138,6 +138,10 @@ func runDoctor(t *testing.T, f fake, display int) (int, string) {
 	return code, buf.String()
 }
 
+func (f fake) Devices(context.Context) (backend.Connected, error) {
+	return backend.Connected{UsesNames: true, How: "fake"}, nil
+}
+
 type errFake struct{}
 
 func (errFake) Error() string { return "ddcutil detect: no permission" }

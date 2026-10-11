@@ -27,8 +27,8 @@ ordering.
 | `odisplay switch <input>` | Move the monitor, then the devices |
 | `odisplay switch <input> --dry-run` | Print the commands, run none of them |
 | `odisplay plan <input>` | The same dry run, as a name you can bind to a key |
-| `odisplay list` | Show the configured inputs |
-| `odisplay list --json` | The same, for a program to read rather than a person |
+| `odisplay list` | Show the configured inputs and the Logitech devices |
+| `odisplay list --json` | The same, for a program to read rather than a person. Does not look for devices; see below |
 | `odisplay doctor` | Check the programs this needs are installed, and that the display number is one this machine has |
 | `odisplay set name <input> <name>` | Rename a button |
 | `odisplay set host <input> <0-3>` | Set the Easy-Switch channel |
@@ -316,8 +316,40 @@ machine that both are paired with.
 }
 ```
 
-`devices` is the exact names Solaar prints, keyboard first and mouse last. Get
-them from `solaar show`. macOS reads only how many there are, because mxswitch takes no
+`devices` is the exact names Solaar prints, keyboard first and mouse last.
+`odisplay list` shows them and the devices the machine can actually see, side
+by side, because the interesting thing is where the two disagree:
+
+```
+$ odisplay list
+config: /home/you/.config/odisplay/odisplay.json
+platform: linux
+display: 1
+usbc     vcp 27   host 0    X
+dp       vcp 15   host 3    Mac Mini
+hdmi     vcp 17   host 2    PC
+
+devices configured (2): MX Keys S, LIFT VERTICAL ERGONOMIC MOUSE
+devices connected (solaar show):
+  MX KEYS S                                          offline
+  LIFT                                               offline
+
+2 device(s) are offline, which is what a device switched to another
+machine looks like. Their names cannot be checked until they answer.
+```
+
+A configured name the program cannot find is a switch that moves the monitor
+and then fails on the devices, which is the one that costs someone their
+keyboard. That is what this is for.
+
+**`list --json` does not do this**, because finding the devices runs a program
+that takes seconds and the panel reads that json every time it opens. A menu
+that took seconds to appear would be worse than one that does not say which
+keyboard is plugged in.
+
+A device that is not answering does not report the name Solaar matches on, so an
+offline device is never called a mismatch: the output says it cannot be checked
+rather than saying it is wrong. macOS reads only how many there are, because mxswitch takes no
 names.
 
 `display` is ddcutil's own index from `ddcutil detect`, not the one your

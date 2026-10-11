@@ -25,6 +25,12 @@ func (Other) Run(context.Context, Step) error {
 	return errors.New("odisplay supports Linux and macOS only")
 }
 
+// Devices refuses like the rest, rather than reporting that this machine has no
+// Logitech devices, which would be a claim it cannot support.
+func (Other) Devices(context.Context) (Connected, error) {
+	return Connected{}, errors.New("odisplay supports Linux and macOS only")
+}
+
 // Detect refuses too, rather than reporting an empty list. An empty list would
 // read as "this machine has no displays", which is a different and wrong thing
 // to say on a platform this tool does not support.

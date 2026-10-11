@@ -22,7 +22,8 @@ const (
 // mouse goes last so the pointer is still here if the keyboard move is what
 // went wrong.
 type Linux struct {
-	Devices []string
+	// Names are the device names Solaar matches on, in the order they are sent.
+	Names []string
 }
 
 func (Linux) Platform() string { return "linux" }
@@ -48,7 +49,7 @@ func (l Linux) Plan(display, vcp int, channel string) (Plan, error) {
 	if err := validChannel(channel); err != nil {
 		return Plan{}, err
 	}
-	for _, device := range l.Devices {
+	for _, device := range l.Names {
 		if device == "" {
 			continue
 		}
@@ -75,7 +76,7 @@ func (l Linux) Run(ctx context.Context, s Step) error {
 // New switching on runtime.GOOS, so no other platform's type has to exist for
 // this to compile and a build for an unsupported platform gets the refusing
 // backend instead of a half-working one.
-func New(devices []string) Backend { return Linux{Devices: devices} }
+func New(devices []string) Backend { return Linux{Names: devices} }
 
 // Detect lists what ddcutil can see. It reads EDID and capabilities and changes
 // nothing on the hardware.

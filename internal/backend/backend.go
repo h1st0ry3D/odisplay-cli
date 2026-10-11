@@ -119,6 +119,42 @@ func Addressable(displays []Display) []Display {
 	return out
 }
 
+// Device is one Logitech input device this machine can see.
+type Device struct {
+	// Name is what the program reports. On Linux it is the name Solaar matches
+	// a device by, which has to match the settings exactly.
+	Name string
+	// Kind is "keyboard", "mouse", or empty when the program does not say.
+	Kind string
+	// Online is false for a device that is paired but not answering, which is
+	// what a device that has been switched to another machine looks like.
+	Online bool
+	// Host is the Easy-Switch channel it is on, when the program reports one.
+	Host string
+	// Why is what the program said about it, when it is not online.
+	Why string
+
+	// friendly is the capitalised name the program prints above the detail.
+	// It is the fallback when the detail does not name the device.
+	friendly string
+}
+
+// Connected is what this machine can see of its Logitech devices.
+type Connected struct {
+	// UsesNames reports whether the names in the settings are the ones this
+	// platform matches on. Solaar matches by name and a name that does not
+	// match is a failed switch; mxswitch picks the device itself and never
+	// sees the settings' names at all.
+	//
+	// It is here so the display side can tell a real mismatch from a list that
+	// was never going to line up.
+	UsesNames bool
+	Devices   []Device
+	// How is the command that was read, for a report that says where the
+	// answer came from.
+	How string
+}
+
 // Backend plans and runs the switch for one platform.
 type Backend interface {
 	Platform() string
@@ -133,6 +169,9 @@ type Backend interface {
 	// Detect lists the monitors this machine can see. It reads the
 	// hardware's identity and capabilities and changes nothing.
 	Detect(ctx context.Context) ([]Display, error)
+	// Devices lists the Logitech input devices this machine can see. It reads
+	// and changes nothing.
+	Devices(ctx context.Context) (Connected, error)
 }
 
 // path is the only PATH a child ever sees. The programs are named absolutely

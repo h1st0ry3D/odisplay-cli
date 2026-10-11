@@ -42,7 +42,7 @@ func run(args []string) int {
 	case "switch":
 		return cmdSwitch(ctx, args[1:], out, errOut)
 	case "list":
-		return cmdList(args[1:], out, errOut)
+		return cmdList(ctx, args[1:], out, errOut)
 	case "set":
 		return cmdSet(args[1:], out, errOut)
 	case "doctor":
@@ -269,7 +269,7 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 	return order.CodeOK
 }
 
-func cmdList(args []string, out *bufio.Writer, errOut *os.File) int {
+func cmdList(ctx context.Context, args []string, out *bufio.Writer, errOut *os.File) int {
 	// --json is how the panel reads its settings. It prints the config as it
 	// stands after validation, so the panel renders exactly the numbers that
 	// would be sent, rather than reimplementing the rules that decide them.
@@ -329,7 +329,99 @@ func cmdList(args []string, out *bufio.Writer, errOut *os.File) int {
 		}
 		fmt.Fprintf(out, "%-8s vcp %-4d host %-4s %s\n", in.Key, in.VCP, in.Host, name)
 	}
+
+	reportDevices(ctx, out, b, cfg)
 	return order.CodeOK
+}
+
+// reportDevices prints the Logitech devices, configured and seen.
+//
+// Deliberately not in `list --json`. Finding them runs solaar, which takes
+// nearly three seconds, and the panel reads the json every time it opens; a
+// menu that took three seconds to appear would be worse than one that does not
+// say which keyboard is plugged in.
+//
+// The two lists are shown together because the interesting thing is where they
+// disagree. A configured name Solaar cannot find is a switch that moves the
+// monitor and then fails on the devices, which is the case that costs someone
+// their keyboard.
+func reportDevices(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg config.Config) {
+	fmt.Fprintln(out)
+	if len(cfg.Devices) == 0 {
+		fmt.Fprintln(out, "devices configured: none, so a switch never moves the keyboard or mouse")
+	} else {
+		fmt.Fprintf(out, "devices configured (%d): %s\n", len(cfg.Devices), strings.Join(cfg.Devices, ", "))
+	}
+
+	seen, err := b.Devices(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "devices connected:  unknown, %v\n", err)
+		return
+	}
+	if len(seen.Devices) == 0 {
+		fmt.Fprintf(out, "devices connected:  none seen by %s\n", seen.How)
+		return
+	}
+	fmt.Fprintf(out, "devices connected (%s):\n", seen.How)
+	for _, d := range seen.Devices {
+		state := "online"
+		if !d.Online {
+			state = d.Why
+		}
+		line := "  " + d.Name
+		if d.Kind != "" {
+			line += "  (" + d.Kind + ")"
+		}
+		if d.Host != "" {
+			line += "  host " + d.Host
+		}
+		fmt.Fprintf(out, "%-52s %s\n", line, state)
+	}
+
+	// A device that is not answering does not report the name Solaar matches
+	// on, only a display name above it. So an offline device can be compared
+	// with nothing, and saying its name is wrong because it was not found would
+	// be a claim the output cannot support.
+	var online []string
+	offline := 0
+	for _, d := range seen.Devices {
+		if d.Online {
+			online = append(online, d.Name)
+		} else {
+			offline++
+		}
+	}
+
+	if offline > 0 {
+		fmt.Fprintf(out, "\n%d device(s) are offline, which is what a device switched to another\n", offline)
+		fmt.Fprintln(out, "machine looks like. Their names cannot be checked until they answer.")
+	}
+
+	if !seen.UsesNames {
+		// On a platform that picks the devices itself, the settings' names are
+		// not what it matches on, so a list that does not line up is not a
+		// problem.
+		fmt.Fprintln(out, "\nthis platform picks the devices itself, so the names above do not have to match")
+		return
+	}
+
+	var missing []string
+	for _, want := range cfg.Devices {
+		found := false
+		for _, name := range online {
+			if name == want {
+				found = true
+			}
+		}
+		if !found {
+			missing = append(missing, want)
+		}
+	}
+	if len(missing) == 0 || offline > 0 {
+		return
+	}
+	fmt.Fprintf(out, "\nconfigured but not seen: %s\n", strings.Join(missing, ", "))
+	fmt.Fprintln(out, "a switch that includes one of these will move the monitor and then fail on the devices")
 }
 
 func cmdPath(out *bufio.Writer, errOut *os.File) int {

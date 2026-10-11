@@ -25,6 +25,10 @@ func (f *fake) Platform() string { return "fake" }
 
 func (f *fake) Monitor() string { return "ddcutil" }
 
+func (f *fake) Devices(context.Context) (backend.Connected, error) {
+	return backend.Connected{}, nil
+}
+
 func (f *fake) Plan(display, vcp int, channel string) (backend.Plan, error) {
 	if f.planErr != nil {
 		return backend.Plan{}, f.planErr

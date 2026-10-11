@@ -19,7 +19,7 @@ import (
 // The monitor is always the first step, and the display number is ddcutil's own
 // index from `ddcutil detect`, not the one Hyprland uses.
 func TestLinuxPlanWritesHexForDdcutil(t *testing.T) {
-	l := Linux{Devices: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"}}
+	l := Linux{Names: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"}}
 	plan, err := l.Plan(1, 15, "0")
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestLinuxPlanWritesHexForDdcutil(t *testing.T) {
 // match exactly is an error rather than a silent no-op. So it gets one call per
 // device, and the name is one argument with its spaces intact.
 func TestLinuxPlanIsOneStepPerDevice(t *testing.T) {
-	l := Linux{Devices: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"}}
+	l := Linux{Names: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"}}
 	plan, err := l.Plan(1, 15, "2")
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestLinuxPlanRefusesAnOutOfRangeValue(t *testing.T) {
 // An empty device name in the config would otherwise become a Solaar call that
 // matches nothing and reports an error that reads like the keyboard is gone.
 func TestEmptyDeviceNamesAreSkipped(t *testing.T) {
-	l := Linux{Devices: []string{"", "MX Keys S", ""}}
+	l := Linux{Names: []string{"", "MX Keys S", ""}}
 	plan, _ := l.Plan(1, 15, "1")
 	if len(plan.Steps) != 2 {
 		t.Errorf("steps = %d, want the monitor plus one real device", len(plan.Steps))
@@ -78,7 +78,7 @@ func TestEmptyDeviceNamesAreSkipped(t *testing.T) {
 // Plan must not execute anything. This is what makes --dry-run honest: the same
 // code path builds the steps, and the only difference is that nothing is run.
 func TestLinuxPlanRunsNothing(t *testing.T) {
-	l := Linux{Devices: []string{"MX Keys S"}}
+	l := Linux{Names: []string{"MX Keys S"}}
 	plan, err := l.Plan(1, 15, "2")
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestLinuxPlanRunsNothing(t *testing.T) {
 // Host 0 means the devices stay where they are, so there is one step and no
 // Solaar call at all.
 func TestLinuxHostOffIsOneStep(t *testing.T) {
-	l := Linux{Devices: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"}}
+	l := Linux{Names: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"}}
 	plan, _ := l.Plan(1, 15, "0")
 	if len(plan.Steps) != 1 {
 		t.Errorf("steps = %d, want only the monitor", len(plan.Steps))
@@ -385,7 +385,7 @@ func TestInstalledAgreesWithWhatRunFinds(t *testing.T) {
 // and has already moved the monitor by then. It is refused before the monitor
 // moves instead, which is the direction that costs nobody their keyboard.
 func TestLinuxRefusesAnEmptyChannel(t *testing.T) {
-	l := Linux{Devices: []string{"MX Keys S"}}
+	l := Linux{Names: []string{"MX Keys S"}}
 	if _, err := l.Plan(1, 15, ""); err == nil {
 		t.Fatal("an empty channel was accepted")
 	}
@@ -397,7 +397,7 @@ func TestLinuxRefusesAnEmptyChannel(t *testing.T) {
 }
 
 func TestLinuxRefusesAChannelOutsideOneToThree(t *testing.T) {
-	l := Linux{Devices: []string{"MX Keys S"}}
+	l := Linux{Names: []string{"MX Keys S"}}
 	for _, channel := range []string{"4", "9", "-1", "x", " 2", "2 "} {
 		if _, err := l.Plan(1, 15, channel); err == nil {
 			t.Errorf("accepted channel %q", channel)
