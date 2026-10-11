@@ -32,6 +32,7 @@ ordering.
 | `odisplay doctor` | Check the programs this needs are installed, and that the display number is one this machine has |
 | `odisplay set name <input> <name>` | Rename a button |
 | `odisplay set host <input> <0-3>` | Set the Easy-Switch channel |
+| `odisplay set hidden <input> <on\|off>` | Leave an input out of the panel and the menu, without removing it |
 | `odisplay set display <n>` | Set the display number, for this platform only |
 | `odisplay path` | Print the config file's location |
 
@@ -344,6 +345,15 @@ machine that both are paired with.
   "devices": ["MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"]
 }
 ```
+
+`hidden` keeps an input out of the panel and out of the menu without removing
+it. It is a view setting, not a switch: the input keeps its name, its channel
+and its value, and `odisplay switch` still reaches it. That is what makes it
+safe to try, and what makes hiding the input you are currently on a reasonable
+thing to do.
+
+`odisplay list` marks them with an `h` so the file and the screen do not have to
+be compared by eye.
 
 `devices` is the exact names Solaar prints, in the order they are sent. The
 mouse is first in the default, which is a choice rather than an accident -- see

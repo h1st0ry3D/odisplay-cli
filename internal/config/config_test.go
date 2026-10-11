@@ -526,3 +526,73 @@ func TestDefaultCarriesOffExplicitly(t *testing.T) {
 		}
 	}
 }
+
+// Hiding is a view setting, not a removal. The input keeps everything it had:
+// switching still reaches it, which is what makes hiding safe to try.
+func TestHiddenIsAViewSetting(t *testing.T) {
+	path := write(t, `{"version":1,"display":1,"inputs":[
+		{"key":"usbc","vcp":27},
+		{"key":"dp","name":"Mac Mini","vcp":15,"host":"2","hidden":true}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Inputs) != 2 {
+		t.Fatalf("inputs = %d, want both kept", len(cfg.Inputs))
+	}
+	if len(cfg.Visible()) != 1 || cfg.Visible()[0].Key != "usbc" {
+		t.Errorf("Visible() = %+v, want only usbc", cfg.Visible())
+	}
+	// Everything else about a hidden input is untouched.
+	in, ok := cfg.Input("dp")
+	if !ok {
+		t.Fatal("a hidden input cannot be looked up")
+	}
+	if in.Name != "Mac Mini" || in.Host != "2" {
+		t.Errorf("hidden input lost its settings: %+v", in)
+	}
+}
+
+func TestNothingHiddenMeansEverythingVisible(t *testing.T) {
+	cfg := Default()
+	if len(cfg.Visible()) != len(cfg.Inputs) {
+		t.Errorf("Visible() = %d, want %d", len(cfg.Visible()), len(cfg.Inputs))
+	}
+}
+
+func TestHidingSurvivesARoundTrip(t *testing.T) {
+	path := write(t, `{"version":1,"display":1,"inputs":[{"key":"dp","vcp":15,"hidden":true}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetPath(path)
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Inputs[0].Hidden {
+		t.Error("a hidden input came back visible")
+	}
+}
+
+// An input that is not hidden must not carry the key at all, so a file that
+// never used this says nothing about it.
+func TestVisibleInputsDoNotWriteTheKey(t *testing.T) {
+	cfg := Default()
+	path := filepath.Join(t.TempDir(), "odisplay.json")
+	cfg.SetPath(path)
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "hidden") {
+		t.Errorf("a file with nothing hidden mentions it:\n%s", raw)
+	}
+}

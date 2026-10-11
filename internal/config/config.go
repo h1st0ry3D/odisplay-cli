@@ -61,6 +61,25 @@ type Input struct {
 	VCP int `json:"vcp"`
 	// Host is the Easy-Switch channel to move the devices to, or HostOff.
 	Host Host `json:"host,omitempty"`
+	// Hidden keeps this input out of the panel and the menu without removing
+	// it. It is a view setting, not a switch: the input is still configured,
+	// `switch` still reaches it, and unhiding it is one click away.
+	//
+	// It exists for the input a machine is already on, which is noise in a
+	// list of things to switch to, and for anything unplugged for now.
+	Hidden bool `json:"hidden,omitempty"`
+}
+
+// Visible returns the inputs a panel or a menu should offer, in order. A hidden
+// input is left out here and nowhere else.
+func (c Config) Visible() []Input {
+	out := make([]Input, 0, len(c.Inputs))
+	for _, in := range c.Inputs {
+		if !in.Hidden {
+			out = append(out, in)
+		}
+	}
+	return out
 }
 
 // Config is the whole file.

@@ -71,6 +71,7 @@ func usage(w io.Writer) {
   odisplay doctor                       check the programs this needs are installed
   odisplay set name <input> <name>
   odisplay set host <input> <0-3>
+  odisplay set hidden <input> <on|off>
   odisplay set display <n>           for this platform only
   odisplay path                         print the config file's location
 
@@ -327,7 +328,14 @@ func cmdList(ctx context.Context, args []string, out *bufio.Writer, errOut *os.F
 		if name == "" {
 			name = "(unnamed)"
 		}
-		fmt.Fprintf(out, "%-8s vcp %-4d host %-4s %s\n", in.Key, in.VCP, in.Host, name)
+		mark := " "
+		if in.Hidden {
+			mark = "h"
+		}
+		fmt.Fprintf(out, "%s %-8s vcp %-4d host %-4s %s\n", mark, in.Key, in.VCP, in.Host, name)
+	}
+	if len(cfg.Inputs) > 0 {
+		fmt.Fprintln(out, "  (h marks an input the panel and the menu leave out)")
 	}
 
 	reportDevices(ctx, out, b, cfg)
@@ -500,6 +508,13 @@ func cmdSet(args []string, out *bufio.Writer, errOut *os.File) int {
 			return order.CodeUsage
 		}
 		cfg.Inputs[idx].Host = config.Host(value)
+	case "hidden":
+		on, ok := parseOnOff(value)
+		if !ok {
+			fmt.Fprintln(errOut, "hidden must be on or off")
+			return order.CodeUsage
+		}
+		cfg.Inputs[idx].Hidden = on
 	default:
 		fmt.Fprintf(errOut, "unknown field %q\n", field)
 		return order.CodeUsage
@@ -516,6 +531,19 @@ func cmdSet(args []string, out *bufio.Writer, errOut *os.File) int {
 // parseNumber reads a whole string as a number. strconv.Atoi rather than
 // Sscanf, which takes the leading digits of "2abc" and reports success, so
 // `set display 2abc` would quietly write 2.
+// parseOnOff reads the two words a boolean setting is written with, rather than
+// accepting anything truthy. A value that is not one of them is refused, so a
+// typo cannot silently hide an input or bring one back.
+func parseOnOff(s string) (value, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "on", "true", "yes", "1":
+		return true, true
+	case "off", "false", "no", "0":
+		return false, true
+	}
+	return false, false
+}
+
 func parseNumber(s string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(s))
 }
