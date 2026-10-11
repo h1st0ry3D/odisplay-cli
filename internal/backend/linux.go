@@ -18,9 +18,12 @@ const (
 //
 // Solaar needs one call per device, because it addresses a device by the name
 // it prints and a name that does not match exactly is an error rather than a
-// silent no-op. The order they are listed in is the order they are sent, and the
-// mouse goes last so the pointer is still here if the keyboard move is what
-// went wrong.
+// silent no-op.
+//
+// The order they are listed in is the order they are sent, and the list is the
+// config's, so it is the person's to choose. It is not sorted here or guessed
+// at, because the names are free text: nothing can tell a mouse from a keyboard
+// except the person who typed them.
 type Linux struct {
 	// Names are the device names Solaar matches on, in the order they are sent.
 	Names []string

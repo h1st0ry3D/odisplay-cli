@@ -294,6 +294,26 @@ Find yours with `ddcutil detect` and `ddcutil capabilities`, or on macOS with
 `m1ddc display list`, which numbers the external displays from 1 and skips the
 built-in one. `odisplay doctor` reads that same list.
 
+### The device order
+
+The `devices` list is sent in the order it is written, and the sequence stops at
+the first one that fails. So the order decides what a failure leaves you
+holding:
+
+| First | A keyboard that will not move leaves | A mouse that will not move leaves |
+|---|---|---|
+| mouse | the pointer | the keyboard |
+
+Both leave one way to act, and neither touches the rule that matters: the
+display has already moved by then, or nothing was sent at all.
+
+It is the list order rather than something sorted here, because the names are
+free text. Nothing can tell a mouse from a keyboard except the person who typed
+them, and a rule that guessed would be wrong for the first device whose name
+does not say what it is.
+
+To send the keyboard first instead, swap the two lines in `devices`.
+
 ### Host channels
 
 `0` means the devices stay where they are. `1`, `2` and `3` are the Logitech
@@ -325,7 +345,9 @@ machine that both are paired with.
 }
 ```
 
-`devices` is the exact names Solaar prints, keyboard first and mouse last.
+`devices` is the exact names Solaar prints, in the order they are sent. The
+mouse is first in the default, which is a choice rather than an accident -- see
+[the device order](#the-device-order).
 `odisplay list` shows them and the devices the machine can actually see, side
 by side, because the interesting thing is where the two disagree:
 

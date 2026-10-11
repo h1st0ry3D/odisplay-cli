@@ -155,7 +155,15 @@ func Default() Config {
 			{Key: "dp", Name: "DisplayPort", VCP: 15, Host: HostOff},
 			{Key: "hdmi", Name: "HDMI", VCP: 17, Host: HostOff},
 		},
-		Devices: []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"},
+		// The order is the order they are sent, and the mouse goes first.
+		//
+		// The sequence stops at the first device that fails, so which is sent
+		// first decides what a failure leaves you holding. Mouse first means a
+		// keyboard that will not move leaves the pointer here, and a keyboard
+		// that moves and a mouse that does not leaves the keyboard here. Both
+		// leave one way to act; the display has already moved either way, which
+		// is the part that matters and is not affected by this.
+		Devices: []string{"LIFT VERTICAL ERGONOMIC MOUSE", "MX Keys S"},
 	}
 }
 

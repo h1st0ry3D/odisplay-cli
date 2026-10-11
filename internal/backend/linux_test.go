@@ -49,10 +49,12 @@ func TestLinuxPlanIsOneStepPerDevice(t *testing.T) {
 	if !reflect.DeepEqual(plan.Steps[1].Args, want) {
 		t.Errorf("args = %q, want %q", plan.Steps[1].Args, want)
 	}
-	// The mouse is last, so the pointer is still here if the keyboard move is
-	// what went wrong.
-	if !strings.Contains(plan.Steps[2].Args[1], "LIFT") {
-		t.Errorf("last device = %q, want the mouse", plan.Steps[2].Args[1])
+	// The order is the list order, not one chosen here: the names are free
+	// text, so nothing can tell a mouse from a keyboard except the person who
+	// typed them. Reordering would be a guess dressed as a rule.
+	if plan.Steps[1].Args[1] != "MX Keys S" || plan.Steps[2].Args[1] != "LIFT VERTICAL ERGONOMIC MOUSE" {
+		t.Errorf("order = %q, %q; want it to match the list",
+			plan.Steps[1].Args[1], plan.Steps[2].Args[1])
 	}
 }
 
