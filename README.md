@@ -1,12 +1,17 @@
 # odisplay
 
-Switch a monitor's input source, and the Logitech keyboard and mouse that go with it.
+A software KVM for a DDC/CI monitor and Logitech Easy-Switch devices.
 
-One command moves both. The monitor moves first, and the devices only move once it has.
+It does what a KVM switch does without the box. One command changes the monitor's
+input source and moves the keyboard and mouse to the machine that input belongs to,
+so a desk with three computers on one monitor is one keystroke between them rather
+than a reach for a button underneath the mouse.
 
 ```
 odisplay switch dp
 ```
+
+The monitor moves first, and the devices only move once it has.
 
 ## Why it is a program and not a panel script
 
@@ -107,7 +112,7 @@ when the check did not run.
 
 ## Dependencies
 
-`odisplay` itself has **no dependencies outside the Go standard library**. There is nothing to
+`odisplay` itself has no dependencies outside the Go standard library. There is nothing to
 `go get`, no `go.sum`, and no vendor directory. It shells out to other programs, and those are what
 it needs:
 
@@ -130,8 +135,8 @@ your session can change what a name resolves to:
 | Linux | `/usr/bin`, `/bin` |
 | macOS | `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `~/.local/bin` for the two that are often built by hand |
 
-`odisplay doctor` prints the path it resolved for each program, so which one it found — or that it
-found none — is answerable without guessing.
+`odisplay doctor` prints the path it resolved for each program, so which one it found, or that it
+found none, is answerable without guessing.
 
 ## Install
 
@@ -170,7 +175,7 @@ brew install m1ddc        # Apple Silicon, which is every Mac since 2020
 # brew install ddcctl     # Intel only
 ```
 
-**Use `m1ddc` on Apple Silicon.** `ddcctl` does not work there: it has an open issue from the M1
+Use `m1ddc` on Apple Silicon. `ddcctl` does not work there: it has an open issue from the M1
 launch asking for it, its last commit is from November 2022, and the reason is that Apple replaced
 the framebuffer interfaces it drives. Its DDC calls do nothing on those machines while still
 reporting that they ran, which is the worst way for this to fail. `odisplay` prefers `m1ddc` when
@@ -185,7 +190,7 @@ cd mxswitch && make && make install PREFIX="$HOME/.local"
 ```
 
 `brew` puts them in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel. All of
-those are looked for, so it does not matter which you have — and neither does a hand-built one in
+those are looked for, so it does not matter which you have, and neither does a hand-built one in
 `~/.local/bin`, which is where mxswitch's own `make install` puts it.
 
 mxswitch needs **Input Monitoring** from macOS, which `make install` offers to grant. Keep the
@@ -249,7 +254,7 @@ exactly and a name that does not match is an error rather than a silent no-op.
 The mouse is listed last, so the pointer is still here if the keyboard move is
 what went wrong.
 
-**macOS does not get that guarantee, and it is weaker than it looks.** mxswitch
+macOS does not get that guarantee, and it is weaker than it looks. mxswitch
 takes no device name and has no flag to choose one: it ranks a mouse below a
 keyboard, stops at the first device that answers, and moves one per call. A
 mouse is therefore always the one it picks.
@@ -257,7 +262,7 @@ mouse is therefore always the one it picks.
 `odisplay` runs one call per device in the config, which is a retry rather than
 a list. It moves the keyboard only if the first call sent the mouse somewhere it
 stopped enumerating, making the keyboard the next candidate. If the mouse stays
-visible — a channel that is this same machine, for instance — the second call
+visible, on a channel that is this same machine for instance, the second call
 finds the mouse again and the keyboard does not move.
 
 There is no way to tell those apart from here, so both calls are made and the
@@ -400,7 +405,7 @@ A configured name the program cannot find is a switch that moves the monitor
 and then fails on the devices, which is the one that costs someone their
 keyboard. That is what this is for.
 
-**`list --json` does not do this**, because finding the devices runs a program
+`list --json` does not do this, because finding the devices runs a program
 that takes seconds and the panel reads that json every time it opens. A menu
 that took seconds to appear would be worse than one that does not say which
 keyboard is plugged in.
@@ -428,7 +433,7 @@ away underneath it and Solaar waits on a device that may be asleep.
 
 ## Status
 
-**Linux is tested on real hardware.** **macOS is not.** The macOS code compiles,
+Linux is tested on real hardware. macOS is not. The macOS code compiles,
 vets and has tests, but no Mac has ever run it. Everything said about ddcctl is
 checked against its own documentation; everything said about mxswitch is checked
 against its README and its macOS source, not against a device.
