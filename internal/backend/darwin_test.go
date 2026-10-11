@@ -34,8 +34,8 @@ func TestDarwinPlanWritesTheMonitorInvocation(t *testing.T) {
 // installed. ddcctl's DDC calls do nothing there while still reporting success.
 func TestM1DDCIsPreferredOverDdcctl(t *testing.T) {
 	if Installed(m1ddc) && Installed(ddcctl) {
-		if got := monitor(); got != m1ddc {
-			t.Errorf("monitor() = %q, want m1ddc", got)
+		if got := monitorProgram(); got != m1ddc {
+			t.Errorf("monitorProgram() = %q, want m1ddc", got)
 		}
 	}
 }
@@ -43,7 +43,7 @@ func TestM1DDCIsPreferredOverDdcctl(t *testing.T) {
 // Whichever is picked, neither being present is an error that names what to
 // install rather than one that names nothing.
 func TestNoMonitorProgramIsRefusedWithAdvice(t *testing.T) {
-	if monitor() != "" {
+	if monitorProgram() != "" {
 		t.Skip("a monitor program is installed here")
 	}
 	if _, err := (Darwin{}).Plan(1, 15, "0"); err == nil {

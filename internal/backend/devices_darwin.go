@@ -16,8 +16,8 @@ import (
 // `mxswitch --list` prints one line per HID collection, including the
 // receiver's own vendor collections, so those are skipped: they are not
 // something the settings could ever name.
-func (d Darwin) Devices(ctx context.Context) (Connected, error) {
-	if monitor() == ddcctl {
+func (Darwin) Devices(ctx context.Context) (Connected, error) {
+	if monitorProgram() == ddcctl {
 		// Intel, where mxswitch does not work either. Nothing to report.
 		return Connected{UsesNames: false, How: "mxswitch"}, nil
 	}

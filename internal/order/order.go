@@ -72,8 +72,10 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 		}
 	}
 
-	// Step 0 is always the monitor. Nothing after it runs unless it succeeded.
-	if err := b.Run(ctx, plan.Steps[0]); err != nil {
+	// The first step is always the monitor. Nothing after it runs unless it
+	// succeeded, which is the one thing this program is for.
+	monitor := plan.Steps[0]
+	if err := b.Run(ctx, monitor); err != nil {
 		if errors.Is(err, backend.ErrMissing) {
 			// Named from the step that failed rather than written down here.
 			// This said "ddcutil" on every platform, which on a Mac sent
@@ -82,7 +84,7 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 			return Result{
 				Code: CodeMissing,
 				Message: fmt.Sprintf("%s is not installed, so the display cannot be moved.",
-					filepath.Base(plan.Steps[0].Bin)),
+					filepath.Base(monitor.Bin)),
 				Detail: err.Error(),
 			}
 		}
@@ -93,39 +95,40 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 		}
 	}
 
-	// moved counts the device steps that did something, which decides how a
-	// step with nothing left to do is read.
+	// The devices, in the order the plan gives them. moved is how many did
+	// something, which is what decides how a step with nothing left to do is
+	// read: with something already sent it is the end, and with nothing sent it
+	// is the whole of what happened.
 	moved := 0
 	for _, step := range plan.Steps[1:] {
 		err := b.Run(ctx, step)
 
+		if err == nil {
+			moved++
+			continue
+		}
 		if errors.Is(err, backend.ErrNothingToDo) && moved > 0 {
-			// The devices that were here have all been sent. One platform
-			// moves one per call and says this once there are none left, so
-			// after at least one success this is the end of the sequence
-			// rather than a failure. Reporting it as a failure would say the
-			// keyboard stayed when it had just left.
+			// Everything that was here has been sent. One platform moves one
+			// device per call and says this once there are none left, so after
+			// at least one success it is the end of the sequence. Reporting it
+			// as a failure would say the keyboard stayed when it had left.
 			break
 		}
-
-		if err != nil {
-			if errors.Is(err, backend.ErrMissing) {
-				// The monitor moved and the devices did not, so the user is now
-				// looking at the other machine without input.
-				return Result{
-					Code: CodeMissing,
-					Message: fmt.Sprintf("Sent %s, but %s is not installed, so your keyboard and mouse stayed here.",
-						label, filepath.Base(step.Bin)),
-					Detail: err.Error(),
-				}
-			}
+		if errors.Is(err, backend.ErrMissing) {
+			// The monitor moved and the devices did not, so the user is now
+			// looking at the other machine without input.
 			return Result{
-				Code:    CodeDevicesFailed,
-				Message: fmt.Sprintf("Sent %s, but the devices did not move. The switch underneath your mouse or keyboard is the way back.", label),
-				Detail:  err.Error(),
+				Code: CodeMissing,
+				Message: fmt.Sprintf("Sent %s, but %s is not installed, so your keyboard and mouse stayed here.",
+					label, filepath.Base(step.Bin)),
+				Detail: err.Error(),
 			}
 		}
-		moved++
+		return Result{
+			Code:    CodeDevicesFailed,
+			Message: fmt.Sprintf("Sent %s, but the devices did not move. The switch underneath your mouse or keyboard is the way back.", label),
+			Detail:  err.Error(),
+		}
 	}
 
 	if string(in.Host) == config.HostOff {

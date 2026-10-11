@@ -66,7 +66,7 @@ func (l Linux) Plan(display, vcp int, channel string) (Plan, error) {
 
 // Run executes one step. Solaar gets the larger budget because it is a Python
 // program that opens the receiver and waits on a device that may not answer.
-func (l Linux) Run(ctx context.Context, s Step) error {
+func (Linux) Run(ctx context.Context, s Step) error {
 	timeout := ddcTimeout
 	if s.Bin == solaar {
 		timeout = solaarTimeout
@@ -89,7 +89,7 @@ func New(devices []string) Backend { return Linux{Names: devices} }
 // so the same monitor is "Display 1" whether or not a laptop panel is also
 // plugged in. The numbers are not stable forever: a display that stops
 // answering over I2C drops out and the rest are renumbered.
-func (l Linux) Detect(ctx context.Context) ([]Display, error) {
+func (Linux) Detect(ctx context.Context) ([]Display, error) {
 	text, err := runStepRaw(ctx, Step{Bin: ddcutil, Args: []string{"detect"}}, ddcTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("ddcutil detect: %w", err)

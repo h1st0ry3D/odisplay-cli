@@ -26,8 +26,8 @@ var (
 	mxswitch = mustFind("mxswitch", searchDirs()...)
 )
 
-// monitor is the program that moves the display, and it is a choice rather than
-// a constant because the two are for different Macs.
+// monitorProgram is the program that moves the display, and it is a choice
+// rather than a constant because the two are for different Macs.
 //
 // m1ddc is preferred. It is the one that works on Apple Silicon, which is every
 // Mac made since 2020: ddcctl has an open issue from the M1 launch asking for
@@ -37,7 +37,7 @@ var (
 //
 // ddcctl is kept as the fallback because it is the one that works on Intel
 // Macs, where m1ddc explicitly does not.
-func monitor() string {
+func monitorProgram() string {
 	if Installed(m1ddc) {
 		return m1ddc
 	}
@@ -47,7 +47,7 @@ func monitor() string {
 	return ""
 }
 
-// searchDirs is where both programs are looked for, in order.
+// searchDirs is where the programs are looked for, in order.
 //
 // It has to include the user's own bin, because that is where a no-sudo install
 // goes and it is where the instructions for mxswitch put it:
@@ -128,7 +128,7 @@ func (Darwin) Platform() string { return "darwin" }
 // Monitor names whichever of the two this Mac has, and falls back to the one
 // that would have to be installed, so a label always names something real.
 func (Darwin) Monitor() string {
-	if m := monitor(); m != "" {
+	if m := monitorProgram(); m != "" {
 		return filepath.Base(m)
 	}
 	return "m1ddc"
@@ -144,7 +144,7 @@ func (d Darwin) Plan(display, vcp int, channel string) (Plan, error) {
 	}
 
 	p := Plan{Platform: "darwin"}
-	switch mon := monitor(); mon {
+	switch mon := monitorProgram(); mon {
 	case m1ddc:
 		// `m1ddc display <n> set input <vcp>`, where the value is the same
 		// MCCS number that goes in the settings file.
@@ -180,7 +180,7 @@ func (d Darwin) Plan(display, vcp int, channel string) (Plan, error) {
 
 // Run executes one step. mxswitch gets the larger budget because it enumerates
 // HID devices before it sends anything.
-func (d Darwin) Run(ctx context.Context, s Step) error {
+func (Darwin) Run(ctx context.Context, s Step) error {
 	timeout := ddcTimeout
 	if s.Bin == mxswitch {
 		timeout = mxswitchTimeout
@@ -193,7 +193,6 @@ func (d Darwin) Run(ctx context.Context, s Step) error {
 		// caller knows which, because it knows whether anything has moved yet.
 		return fmt.Errorf("%s: %w", text, ErrNothingToDo)
 	}
-	_ = d
 	return err
 }
 
@@ -233,8 +232,8 @@ const ProbeLimit = 4
 //
 // With ddcctl there is no listing mode at all, so the numbers are found by
 // asking each one in turn whether it answers. See probeDDCCTL.
-func (d Darwin) Detect(ctx context.Context) ([]Display, error) {
-	if monitor() == m1ddc {
+func (Darwin) Detect(ctx context.Context) ([]Display, error) {
+	if monitorProgram() == m1ddc {
 		return listWithM1DDC(ctx)
 	}
 	return probeDDCCTL(ctx)

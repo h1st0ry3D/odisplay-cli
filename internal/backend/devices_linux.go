@@ -12,7 +12,7 @@ import (
 // name exactly and a name that does not match is an error rather than a silent
 // no-op, so a rename in this list that the settings did not follow is the
 // failure where the monitor moves and the keyboard does not.
-func (l Linux) Devices(ctx context.Context) (Connected, error) {
+func (Linux) Devices(ctx context.Context) (Connected, error) {
 	text, err := runStepRaw(ctx, Step{Bin: solaar, Args: []string{"show"}}, solaarTimeout)
 	if err != nil && text == "" {
 		return Connected{}, err
