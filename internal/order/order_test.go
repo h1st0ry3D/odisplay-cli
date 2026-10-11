@@ -107,7 +107,7 @@ func TestFailedMonitorLeavesDevicesAlone(t *testing.T) {
 }
 
 // Half-switched devices are worse than none, so the sequence stops at the first
-// device failure.
+// device failure. Here that is the first device, so nothing has moved.
 func TestDeviceFailureStopsTheRest(t *testing.T) {
 	f := &fake{runErr: map[int]error{1: errors.New("no such host")}}
 	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
@@ -120,8 +120,44 @@ func TestDeviceFailureStopsTheRest(t *testing.T) {
 	if res.Code == CodeDisplayFailed {
 		t.Error("the two failure modes must not share a code")
 	}
+	// Nothing left this machine, so the keyboard and mouse are still here and
+	// there is nothing to recover from. Sending someone to press the button
+	// underneath would be sending them for no reason.
+	if !strings.Contains(res.Message, "stayed here") {
+		t.Errorf("message = %q, want it to say nothing left", res.Message)
+	}
+	if strings.Contains(res.Message, "way back") {
+		t.Errorf("message = %q, want it not to point at a button when nothing moved", res.Message)
+	}
+}
+
+// The other half: one device left and a later one did not, so something is
+// missing and the button underneath is how it comes back.
+func TestAPartialDeviceFailurePointsAtTheButton(t *testing.T) {
+	f := &fake{runErr: map[int]error{2: errors.New("no such host")}}
+	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
+	if res.Code != CodeDevicesFailed {
+		t.Fatalf("code = %d, want %d", res.Code, CodeDevicesFailed)
+	}
+	if len(f.ran) != 3 {
+		t.Errorf("ran %v, want it to stop at the second device", f.ran)
+	}
 	if !strings.Contains(res.Message, "way back") {
 		t.Errorf("message = %q, want it to say how to recover", res.Message)
+	}
+}
+
+// Both messages have to fit the eighty characters a panel shows, because a
+// message cut off is one whose last words nobody reads.
+func TestDeviceFailureMessagesFitAPanel(t *testing.T) {
+	for _, ran := range []map[int]error{
+		{1: errors.New("no such host")},
+		{2: errors.New("no such host")},
+	} {
+		res := Switch(context.Background(), &fake{runErr: ran}, cfgWith("2"), "dp", false)
+		if n := len([]rune(res.Message)); n > 80 {
+			t.Errorf("message is %d characters, want at most 80: %q", n, res.Message)
+		}
 	}
 }
 
@@ -335,8 +371,11 @@ func TestARealFailureAfterASuccessStillStops(t *testing.T) {
 	if len(f.ran) != 2 {
 		t.Errorf("ran %v, want it to stop at the failure", f.ran)
 	}
-	if !strings.Contains(res.Message, "way back") {
-		t.Errorf("message = %q, want it to point at the button", res.Message)
+	if !strings.Contains(res.Message, "stayed here") {
+		t.Errorf("message = %q, want it to say nothing left", res.Message)
+	}
+	if strings.Contains(res.Message, "way back") {
+		t.Errorf("message = %q, want it not to point at a button when nothing moved", res.Message)
 	}
 }
 

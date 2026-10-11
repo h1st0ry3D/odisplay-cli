@@ -124,9 +124,23 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 				Detail: err.Error(),
 			}
 		}
+		// What to say depends on whether anything left, which is the point of
+		// counting. With nothing moved the keyboard and mouse are still here
+		// and there is nothing to recover from, so pointing at the button
+		// underneath would send someone to press it for no reason.
+		//
+		// Both are well inside the eighty characters a panel shows, because a
+		// message that is cut off is one whose last words nobody reads.
+		if moved == 0 {
+			return Result{
+				Code:    CodeDevicesFailed,
+				Message: fmt.Sprintf("Sent %s, but the keyboard and mouse stayed here.", label),
+				Detail:  err.Error(),
+			}
+		}
 		return Result{
 			Code:    CodeDevicesFailed,
-			Message: fmt.Sprintf("Sent %s, but the devices did not move. The switch underneath your mouse or keyboard is the way back.", label),
+			Message: fmt.Sprintf("Sent %s. A device did not follow; the button underneath is the way back.", label),
 			Detail:  err.Error(),
 		}
 	}
