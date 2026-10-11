@@ -102,15 +102,22 @@ const mxswitchTimeout = 15 * time.Second
 // permission for the binary.
 //
 // Unlike Solaar, mxswitch does not take a device name: it picks the device
-// itself, preferring a mouse over a keyboard, and moves one per call. So the
-// device count has to come from somewhere, and the config's device list is what
-// says it. The names in that list are Solaar's and are not used here; only how
-// many there are.
+// itself and moves one per call, and there is no flag to choose. So the device
+// count has to come from somewhere, and the config's device list is what says
+// it. The names in that list are Solaar's and are not used here; only how many
+// there are.
 //
-// That is also a limit worth knowing before relying on it: with both a keyboard
-// and a mouse present, mxswitch sends the mouse on the first call and the
-// keyboard on the second, whatever order these steps run in. So the mouse
-// leaves first on macOS, the reverse of Linux.
+// Which device it picks is not a preference that can be argued with: it ranks a
+// mouse below a keyboard and stops at the first one that answers, so a mouse is
+// always chosen when there is one. That makes this loop a retry rather than a
+// list of devices to move.
+//
+// It works when the first call sends the mouse somewhere it is no longer
+// enumerating, which makes the keyboard the next candidate. It does not work
+// when the mouse stays visible -- a channel that is this same machine, for
+// instance -- because the second call finds the mouse again and does nothing
+// more. There is no way from here to tell which happened, so the steps are
+// built either way and the second is harmless when it is a repeat.
 type Darwin struct {
 	// Count is how many Logitech devices to move. Names are ignored.
 	Count int

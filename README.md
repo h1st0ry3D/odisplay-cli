@@ -231,11 +231,20 @@ exactly and a name that does not match is an error rather than a silent no-op.
 The mouse is listed last, so the pointer is still here if the keyboard move is
 what went wrong.
 
-**macOS does not get that guarantee.** mxswitch takes no device name: it picks the
-device itself, preferring a mouse over a keyboard, and moves one per call. So the
-mouse goes first there, whatever order the steps are planned in. The number of
-calls comes from how many devices are in the config; the names in it are Solaar's
-and are unused on macOS.
+**macOS does not get that guarantee, and it is weaker than it looks.** mxswitch
+takes no device name and has no flag to choose one: it ranks a mouse below a
+keyboard, stops at the first device that answers, and moves one per call. A
+mouse is therefore always the one it picks.
+
+`odisplay` runs one call per device in the config, which is a retry rather than
+a list. It moves the keyboard only if the first call sent the mouse somewhere it
+stopped enumerating, making the keyboard the next candidate. If the mouse stays
+visible — a channel that is this same machine, for instance — the second call
+finds the mouse again and the keyboard does not move.
+
+There is no way to tell those apart from here, so both calls are made and the
+second is harmless when it repeats. If the keyboard does not follow, that is
+this, and the button underneath is the way to move it.
 
 ### The display number
 
