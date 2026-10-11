@@ -288,6 +288,7 @@ func runStepRaw(ctx context.Context, s Step, timeout time.Duration) (string, err
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
+			text = tidy(text)
 			if strings.TrimSpace(text) == "" {
 				text = fmt.Sprintf("exited with %d", exit.ExitCode())
 			}
@@ -342,6 +343,45 @@ func (c *capture) String() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.buf.String()
+}
+
+// traceback is what a Python program prints when it raises.
+const traceback = "Traceback (most recent call last)"
+
+// tidy reduces a failure to the sentence that says what went wrong.
+//
+// Solaar reports a device it cannot find by raising, which prints a Python
+// traceback whose last line is the actual reason: "no online device found
+// matching 'MX Keys S'". That sentence arrived at the end of four hundred
+// characters of file paths and source lines, and the front ends show one line
+// cut at two hundred, so what reached the screen was Python internals with the
+// reason cut off the end -- a failure that says everything except what is
+// wrong.
+//
+// Only a traceback is touched. Anything else is left exactly as the program
+// wrote it, because a program that prints something readable should have it
+// shown as it is.
+func tidy(text string) string {
+	if !strings.Contains(text, traceback) {
+		return text
+	}
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		// A frame is indented under the header and the exception is not, which
+		// is what tells the reason apart from a line of the traceback. Without
+		// it, a traceback cut off before its end reduces to a file path, which
+		// is a fragment presented as an explanation.
+		if line != strings.TrimLeft(line, " \t") {
+			continue
+		}
+		if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.Contains(trimmed, traceback) {
+			return trimmed
+		}
+	}
+	// Nothing that reads as a reason, so the traceback is left whole rather
+	// than replaced with a guess.
+	return text
 }
 
 // flatten makes a child's output into one line. A wrapped message reads as one

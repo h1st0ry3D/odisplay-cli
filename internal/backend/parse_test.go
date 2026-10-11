@@ -144,3 +144,54 @@ func TestParsingMxswitchListSkipsRubbish(t *testing.T) {
 		t.Errorf("got %+v, want none", got)
 	}
 }
+
+// Captured from this machine. Solaar reports a device it cannot find by
+// raising, so the reason is the last line of a traceback -- four hundred
+// characters after the start, and the front ends show two hundred.
+func TestATracebackIsReducedToItsReason(t *testing.T) {
+	const real = `solaar: error: Traceback (most recent call last):
+  File "/usr/lib/python3.14/site-packages/solaar/cli/__init__.py", line 244, in run
+    m.run(c, args, _find_receiver, _find_device)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/site-packages/solaar/cli/config.py", line 179, in run
+    raise Exception(f"no online device found matching '{device_name}'")
+Exception: no online device found matching 'MX Keys S'
+`
+	got := tidy(real)
+	want := "Exception: no online device found matching 'MX Keys S'"
+	if got != want {
+		t.Errorf("tidy =\n%q\nwant\n%q", got, want)
+	}
+	// The point of it: the reason has to survive being cut at two hundred
+	// characters, because that is what the panel and the menu do to it.
+	if len(flatten(got)) > 200 {
+		t.Errorf("the tidied reason is %d characters, so it is still cut", len(flatten(got)))
+	}
+	if !strings.Contains(flatten(got), "no online device found") {
+		t.Error("the reason did not survive")
+	}
+}
+
+// Anything that is not a traceback is left exactly as written. A program that
+// prints something readable should have it shown as it is.
+func TestReadableOutputIsLeftAlone(t *testing.T) {
+	for _, text := range []string{
+		"Display 1 not found",
+		"No Logitech device supporting ChangeHost found.\nClick the mouse to wake it.",
+		"",
+		"dáme un traceback sin la palabra",
+	} {
+		if got := tidy(text); got != text {
+			t.Errorf("tidy(%q) = %q, want it unchanged", text, got)
+		}
+	}
+}
+
+// A traceback with nothing after it must not be reduced to a file path, which
+// would be a worse answer than the traceback.
+func TestATracebackWithoutAReasonIsLeftWhole(t *testing.T) {
+	const odd = "Traceback (most recent call last):\n  File \"x.py\", line 1\n"
+	if got := tidy(odd); got != odd {
+		t.Errorf("tidy = %q, want it left whole", got)
+	}
+}
