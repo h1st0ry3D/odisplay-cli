@@ -427,3 +427,14 @@ func TestBothBackendsAgreeOnChannels(t *testing.T) {
 		}
 	}
 }
+
+// Nothing on Linux needs a password: suspending and powering off go through
+// polkit, which allows them for the user at the console. There is no command
+// for a rules file to name, so nothing is offered to one.
+func TestLinuxAsksForNoPassword(t *testing.T) {
+	for _, action := range []string{"", "sleep", "shutdown", "nonsense"} {
+		if got := (Linux{}).Grant(action); got != "" {
+			t.Errorf("Grant(%q) = %q, want nothing", action, got)
+		}
+	}
+}

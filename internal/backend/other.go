@@ -21,6 +21,9 @@ func (Other) Monitor() string { return "" }
 // to sleep would be a strange thing to insist on.
 func (Other) Power(string) []Step { return nil }
 
+// Grant is empty. Nothing here asks for a privilege, or does anything.
+func (Other) Grant(string) string { return "" }
+
 func (Other) Plan(int, int, string) (Plan, error) {
 	return Plan{}, errors.New("odisplay supports Linux and macOS only")
 }

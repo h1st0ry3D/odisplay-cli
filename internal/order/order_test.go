@@ -32,6 +32,10 @@ func (f *fake) Platform() string { return "fake" }
 
 func (f *fake) Monitor() string { return "ddcutil" }
 
+// Grant is empty: the ordering does not print rules, and nothing in these tests
+// needs a password.
+func (f *fake) Grant(string) string { return "" }
+
 // power is what the fake says the platform would run afterwards, so a test can
 // see whether the ordering ran it.
 func (f *fake) Power(string) []backend.Step { return f.power }

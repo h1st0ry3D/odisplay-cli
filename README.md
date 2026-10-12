@@ -389,22 +389,18 @@ privileged:
   at the console. Over SSH, or from another user's session, it is refused.
 - **macOS** has no unprivileged route, so `sudo -n` is attempted. `-n` makes it
   fail at once rather than wait on a password prompt nobody can reach from a
-  menu. To make it work, one line in `sudoers`, for that command only, added
-  with `sudo visudo`:
+  menu, and nothing here can ever ask for one. One line in `sudoers` makes
+  shutdown work, for that command only. `odisplay doctor` prints it with the
+  path this machine actually resolves, ready to paste:
 
   ```
   yourname ALL=(root) NOPASSWD: /sbin/shutdown -h now
   ```
 
-  A rule matches the path rather than the name, so take it from the command
-  odisplay will actually run rather than from here. This prints the whole
-  sequence, and the shutdown is its last line:
-
-  ```sh
-  odisplay switch dp --dry-run
-  ```
-
-  Nothing else is granted.
+  The path matters, because a rule matches the path rather than the name of the
+  program, so a line naming a different one never fires. Add it with
+  `sudo visudo`, or as a file of its own in `/etc/sudoers.d`. Nothing else is
+  granted.
 
 `hidden` keeps an input out of the panel and out of the menu without removing
 it. It is a view setting, not a switch: the input keeps its name, its channel

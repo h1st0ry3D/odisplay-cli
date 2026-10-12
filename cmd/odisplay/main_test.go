@@ -25,12 +25,15 @@ type fake struct {
 	// power is what the fake platform says it would run afterwards, so a test
 	// can see whether doctor looked at it.
 	power []backend.Step
+	// grant is the command the fake platform says a rules file has to name.
+	grant string
 }
 
 func (f fake) Platform() string { return "fake" }
 func (f fake) Monitor() string  { return "ddcutil" }
 
 func (f fake) Power(string) []backend.Step { return f.power }
+func (f fake) Grant(string) string         { return f.grant }
 func (f fake) Plan(int, int, string) (backend.Plan, error) {
 	if f.planErr != nil {
 		return backend.Plan{}, f.planErr
@@ -211,5 +214,62 @@ func TestDoctorChecksTheActionAsWell(t *testing.T) {
 	}
 	if !strings.Contains(out, "/nowhere/pmset") {
 		t.Errorf("output does not name the command that is missing:\n%s", out)
+	}
+}
+
+// The rule a machine needs has to name the command by its path, and the command
+// is not the sudo that runs it. Doctor is what someone reads before their first
+// switch, so it is where the line belongs, printed and ready to paste.
+//
+// A rule that has not been added yet is not a failure. Nothing can tell whether
+// it is there, because reading /etc/sudoers needs the very privilege being
+// asked about, so doctor says what to add and leaves the exit code alone.
+func TestDoctorPrintsTheRuleTheActionNeeds(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "odisplay.json")
+	body := `{"version":1,"display":1,"inputs":[{"key":"dp","vcp":15,"host":"0","power":"shutdown"}]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ODISPLAY_CONFIG", path)
+	t.Setenv("USER", "heiko")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := fake{
+		displays: []backend.Display{{Number: 1, Name: "card2-DP-6", Usable: true}},
+		power:    []backend.Step{{Bin: "/usr/bin/sudo", Args: []string{"-n", "/sbin/shutdown", "-h", "now"}}},
+		grant:    "/sbin/shutdown -h now",
+	}
+	var buf bytes.Buffer
+	w := bufio.NewWriter(&buf)
+	code := doctor(context.Background(), w, f, cfg)
+	w.Flush()
+	out := buf.String()
+
+	if code != order.CodeOK {
+		t.Errorf("code = %d, want %d: a rule that is not there yet is not a failure\n%s",
+			code, order.CodeOK, out)
+	}
+	if want := "heiko ALL=(root) NOPASSWD: /sbin/shutdown -h now"; !strings.Contains(out, want) {
+		t.Errorf("output does not carry the line to paste, want %q in:\n%s", want, out)
+	}
+	// The command inside sudo has to be there too, and is checked like any
+	// other program rather than being taken on trust.
+	if !strings.Contains(out, "found  /sbin/shutdown") {
+		t.Errorf("output does not check the command the rule names:\n%s", out)
+	}
+	if strings.Contains(out, "sudo") && !strings.Contains(out, "found  /usr/bin/sudo") {
+		t.Errorf("output does not check the program the step runs either:\n%s", out)
+	}
+}
+
+// A session with no USER set would otherwise print a line granting the command
+// to every user on the machine.
+func TestDoctorDoesNotGrantTheRuleToEveryone(t *testing.T) {
+	t.Setenv("USER", "")
+	if got := sudoersUser(); got == "" || got == "ALL" {
+		t.Errorf("sudoersUser() = %q with no USER set, want a name that grants nothing", got)
 	}
 }

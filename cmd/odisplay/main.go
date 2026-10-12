@@ -171,6 +171,16 @@ func cmdDoctor(ctx context.Context, args []string, out *bufio.Writer, errOut *os
 
 // doctor is cmdDoctor with the backend supplied, so its decisions can be
 // checked against a scripted one.
+// sudoersUser is the name to put in the line doctor prints, which is whoever is
+// running it, because that is who the rule is for. A session with no USER set
+// would otherwise produce a line granting it to every user on the machine.
+func sudoersUser() string {
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	return "yourname"
+}
+
 func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg config.Config) int {
 	fmt.Fprintf(out, "platform: %s\n", b.Platform())
 	fmt.Fprintf(out, "config:   ")
@@ -183,6 +193,10 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 	seen := map[string]bool{}
 	problems := 0
 	missing := 0
+	// granted is each command a rules file has to name, once, in the order it
+	// was found, so the same line is not printed for every input using it.
+	var granted []string
+	seenGrant := map[string]bool{}
 	for _, in := range cfg.Inputs {
 		plan, err := b.Plan(cfg.Display, in.VCP, string(in.Host))
 		if err != nil {
@@ -198,7 +212,19 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 		// the command that puts it to sleep is missing or is not where it is
 		// expected, and that is found out on the way out of the door.
 		plan.After = b.Power(string(in.Power))
-		for _, prog := range plan.Programs() {
+
+		// The command a rule has to name is not always the program a step
+		// runs: shutting a Mac down runs sudo, and shutdown is inside it. Both
+		// have to be there, so both are checked.
+		programs := plan.Programs()
+		if grant := b.Grant(string(in.Power)); grant != "" {
+			programs = append(programs, strings.Fields(grant)[0])
+			if !seenGrant[grant] {
+				seenGrant[grant] = true
+				granted = append(granted, grant)
+			}
+		}
+		for _, prog := range programs {
 			if seen[prog] {
 				continue
 			}
@@ -211,6 +237,16 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 			}
 		}
 	}
+	if len(granted) > 0 {
+		fmt.Fprintln(out, "\nNothing here can prompt for a password, so this has to be allowed ahead of")
+		fmt.Fprintln(out, "time. A rules file matches the path rather than the name of the program, so it")
+		fmt.Fprintln(out, "has to name the command in full. Add it with `sudo visudo`, or as a file of its")
+		fmt.Fprintln(out, "own in /etc/sudoers.d:")
+		for _, grant := range granted {
+			fmt.Fprintf(out, "\n    %s ALL=(root) NOPASSWD: %s\n", sudoersUser(), grant)
+		}
+	}
+
 	if missing > 0 {
 		fmt.Fprintln(out, "\nsomething is missing. Switches will fail until it is installed.")
 		return order.CodeMissing

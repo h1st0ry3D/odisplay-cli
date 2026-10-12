@@ -192,6 +192,13 @@ type Backend interface {
 	// nothing for an action that does nothing. It is empty for anything it does
 	// not recognise.
 	Power(action string) []Step
+	// Grant is the command a rules file has to name for an action to happen
+	// without a password, or "" when the action needs no privilege.
+	//
+	// It is not always the program the step runs. Shutting a Mac down runs
+	// sudo, and the command that needs granting is inside it, so a caller
+	// checking whether the pieces are installed has to look at both.
+	Grant(action string) string
 	// Run executes one step.
 	Run(ctx context.Context, s Step) error
 	// Detect lists the monitors this machine can see. It reads the

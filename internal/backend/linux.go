@@ -49,6 +49,11 @@ type Linux struct {
 	Names []string
 }
 
+// Grant is empty. Suspending and powering off go through polkit, which allows
+// them for the user at the console without a password, so there is no command
+// for a rules file to name.
+func (Linux) Grant(string) string { return "" }
+
 func (Linux) Platform() string { return "linux" }
 
 // Monitor is ddcutil, which is what moves the display on Linux.

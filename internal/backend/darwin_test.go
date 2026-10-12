@@ -353,3 +353,38 @@ func TestTheCommandsForSleepingAndShuttingDownAreThere(t *testing.T) {
 		}
 	}
 }
+
+// The line a rule has to name is the shutdown command, not the sudo that runs
+// it: sudoers matches the path, so a rule naming a different one never fires,
+// and a rule for sudo itself would grant far more than this needs.
+func TestGrantNamesTheShutdownCommandAndNotTheSudo(t *testing.T) {
+	got := (Darwin{}).Grant("shutdown")
+	if got == "" {
+		t.Fatal("Grant(shutdown) is empty, so nothing would be offered to a rules file")
+	}
+	if strings.Contains(got, "sudo") {
+		t.Errorf("Grant(shutdown) = %q, which names sudo", got)
+	}
+	if !strings.HasSuffix(got, " -h now") {
+		t.Errorf("Grant(shutdown) = %q, want the arguments the step runs", got)
+	}
+	fields := strings.Fields(got)
+	if _, err := os.Stat(fields[0]); err != nil {
+		t.Errorf("the rule would name %s, which is not there: %v", fields[0], err)
+	}
+
+	// The step and the rule have to be the same command. Two copies that
+	// drifted would be a rule that silently never fires.
+	step := (Darwin{}).Power("shutdown")
+	if len(step) != 1 {
+		t.Fatalf("Power(shutdown) is %d steps, want one", len(step))
+	}
+	if ran := strings.Join(step[0].Args, " "); !strings.HasSuffix(ran, got) {
+		t.Errorf("the step runs %q and the rule would name %q, which are not the same", ran, got)
+	}
+
+	// Sleeping needs no privilege, so there is nothing to grant.
+	if got := (Darwin{}).Grant("sleep"); got != "" {
+		t.Errorf("Grant(sleep) = %q, but pmset needs no password", got)
+	}
+}

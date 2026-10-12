@@ -95,6 +95,14 @@ const mxswitchTimeout = 15 * time.Second
 // waiting there would hang with nothing on screen to explain it.
 const sudo = "/usr/bin/sudo"
 
+// shutdownArgs is the command that powers this Mac off, without the sudo that
+// has to run it.
+//
+// It is one value because two places need the same words: the step that runs,
+// and the line a sudoers rule has to name. A rule matches the path, so a second
+// copy that drifted would be a rule that silently never fires.
+var shutdownArgs = []string{shutdownBin, "-h", "now"}
+
 // systemDirs is where macOS keeps the commands it ships to sleep and to shut
 // down, looked in that order.
 //
@@ -135,9 +143,21 @@ func (Darwin) Power(action string) []Step {
 	case "sleep":
 		return []Step{{Bin: pmsetBin, Args: []string{"sleepnow"}}}
 	case "shutdown":
-		return []Step{{Bin: sudo, Args: []string{"-n", shutdownBin, "-h", "now"}}}
+		// -n is what makes sudo give up rather than prompt. A menu bar item
+		// has no terminal to be prompted on.
+		return []Step{{Bin: sudo, Args: append([]string{"-n"}, shutdownArgs...)}}
 	}
 	return nil
+}
+
+// Grant is the command a sudoers rule has to name, which is the shutdown
+// command rather than the sudo that runs it. Sleeping needs no privilege, so it
+// grants nothing.
+func (Darwin) Grant(action string) string {
+	if action == "shutdown" {
+		return strings.Join(shutdownArgs, " ")
+	}
+	return ""
 }
 
 // Darwin is the macOS backend: ddcctl for the monitor, mxswitch for the
