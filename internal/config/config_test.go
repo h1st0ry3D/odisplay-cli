@@ -596,3 +596,80 @@ func TestVisibleInputsDoNotWriteTheKey(t *testing.T) {
 		t.Errorf("a file with nothing hidden mentions it:\n%s", raw)
 	}
 }
+
+// An action this does not know is dropped to doing nothing. The safe direction
+// is a machine that stays on, and a value that is not one of the three is a
+// typo rather than an instruction.
+func TestAnUnknownPowerActionDoesNothing(t *testing.T) {
+	path := write(t, `{"version":1,"inputs":[
+		{"key":"dp","vcp":15,"power":"hibernate"},
+		{"key":"hdmi","vcp":17,"power":"sleep"}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Inputs[0].Power != PowerNone {
+		t.Errorf("power = %q, want it dropped to nothing", cfg.Inputs[0].Power)
+	}
+	if cfg.Inputs[1].Power != PowerSleep {
+		t.Errorf("power = %q, want sleep kept", cfg.Inputs[1].Power)
+	}
+}
+
+// Nothing set means nothing happens, and a file that never mentions power says
+// nothing about it.
+func TestPowerIsAbsentByDefault(t *testing.T) {
+	cfg := Default()
+	for _, in := range cfg.Inputs {
+		if in.Power != PowerNone {
+			t.Errorf("%s has power %q, want nothing", in.Key, in.Power)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "odisplay.json")
+	cfg.SetPath(path)
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), "power") {
+		t.Errorf("a file with no action mentions it:\n%s", raw)
+	}
+}
+
+func TestParsePowerReadsTheWordsPeopleType(t *testing.T) {
+	ok := map[string]Power{
+		"": PowerNone, "none": PowerNone, "off": PowerNone, "OFF": PowerNone,
+		"sleep": PowerSleep, "suspend": PowerSleep, "Sleep": PowerSleep,
+		"shutdown": PowerShutdown, "poweroff": PowerShutdown, " shutdown ": PowerShutdown,
+	}
+	for in, want := range ok {
+		got, valid := ParsePower(in)
+		if !valid || got != want {
+			t.Errorf("ParsePower(%q) = %q, %v; want %q", in, got, valid, want)
+		}
+	}
+	for _, in := range []string{"hibernate", "rebot", "yes"} {
+		if _, valid := ParsePower(in); valid {
+			t.Errorf("ParsePower(%q) was accepted", in)
+		}
+	}
+}
+
+func TestPowerSurvivesARoundTrip(t *testing.T) {
+	path := write(t, `{"version":1,"inputs":[{"key":"dp","vcp":15,"power":"shutdown"}]}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetPath(path)
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Inputs[0].Power != PowerShutdown {
+		t.Errorf("power = %q, want shutdown after a round trip", again.Inputs[0].Power)
+	}
+}

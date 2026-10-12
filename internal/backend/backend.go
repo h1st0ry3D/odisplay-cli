@@ -65,17 +65,30 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// Plan is the ordered list of steps for one switch. The first is always the
-// monitor; the rest are the devices.
+// Plan is what one switch would run.
+//
+// Steps move things and After does not: After is what this machine does with
+// itself once the keyboard and mouse have left, and it is kept apart because a
+// failure in it means something different from a failure in a move. The devices
+// were sent; the machine just did not go to sleep.
 type Plan struct {
 	Platform string
 	Steps    []Step
+	After    []Step
+}
+
+// All is every step in the order it would run, which is what a dry run prints
+// and what the program check looks at.
+func (p Plan) All() []Step {
+	out := make([]Step, 0, len(p.Steps)+len(p.After))
+	out = append(out, p.Steps...)
+	return append(out, p.After...)
 }
 
 // Text renders a plan as one command per line, for --dry-run.
 func (p Plan) Text() string {
-	lines := make([]string, 0, len(p.Steps))
-	for _, s := range p.Steps {
+	lines := make([]string, 0, len(p.Steps)+len(p.After))
+	for _, s := range p.All() {
 		lines = append(lines, s.String())
 	}
 	return strings.Join(lines, "\n")
@@ -85,7 +98,7 @@ func (p Plan) Text() string {
 func (p Plan) Programs() []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, s := range p.Steps {
+	for _, s := range p.All() {
 		if !seen[s.Bin] {
 			seen[s.Bin] = true
 			out = append(out, s.Bin)
@@ -175,6 +188,10 @@ type Backend interface {
 	Monitor() string
 	// Plan builds the steps. It does not run anything.
 	Plan(display, vcp int, channel string) (Plan, error)
+	// Power builds what this machine does with itself after a switch, which is
+	// nothing for an action that does nothing. It is empty for anything it does
+	// not recognise.
+	Power(action string) []Step
 	// Run executes one step.
 	Run(ctx context.Context, s Step) error
 	// Detect lists the monitors this machine can see. It reads the

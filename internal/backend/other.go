@@ -17,6 +17,10 @@ func (Other) Platform() string { return runtime.GOOS }
 
 func (Other) Monitor() string { return "" }
 
+// Power does nothing here. This platform refuses everything else, and refusing
+// to sleep would be a strange thing to insist on.
+func (Other) Power(string) []Step { return nil }
+
 func (Other) Plan(int, int, string) (Plan, error) {
 	return Plan{}, errors.New("odisplay supports Linux and macOS only")
 }

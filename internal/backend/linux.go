@@ -12,7 +12,27 @@ import (
 const (
 	ddcutil = "/usr/bin/ddcutil"
 	solaar  = "/usr/bin/solaar"
+	// systemctl is how a desktop session suspends or powers off. Both go
+	// through polkit, which allows them for the user at the console, so
+	// neither needs sudo here. The configure step establishes which.
+	systemctl = "/usr/bin/systemctl"
 )
+
+// Power is the step that suspends or powers off this machine.
+//
+// Both are the session's own, not a privileged shutdown: systemctl asks polkit,
+// and a user sitting at the machine is allowed. One that is not, a remote
+// session for instance, gets a refusal which is reported rather than retried
+// with more force.
+func (Linux) Power(action string) []Step {
+	switch action {
+	case "sleep":
+		return []Step{{Bin: systemctl, Args: []string{"suspend"}}}
+	case "shutdown":
+		return []Step{{Bin: systemctl, Args: []string{"poweroff"}}}
+	}
+	return nil
+}
 
 // Linux is the Linux backend: ddcutil for the monitor, Solaar for the devices.
 //

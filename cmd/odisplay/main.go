@@ -72,6 +72,7 @@ func usage(w io.Writer) {
   odisplay set name <input> <name>
   odisplay set host <input> <0-3>
   odisplay set hidden <input> <on|off>
+  odisplay set power <input> <none|sleep|shutdown>
   odisplay set display <n>           for this platform only
   odisplay path                         print the config file's location
 
@@ -332,7 +333,12 @@ func cmdList(ctx context.Context, args []string, out *bufio.Writer, errOut *os.F
 		if in.Hidden {
 			mark = "h"
 		}
-		fmt.Fprintf(out, "%s %-8s vcp %-4d host %-4s %s\n", mark, in.Key, in.VCP, in.Host, name)
+		power := string(in.Power)
+		if power == "" {
+			power = "none"
+		}
+		fmt.Fprintf(out, "%s %-8s vcp %-4d host %-4s power %-8s %s\n",
+			mark, in.Key, in.VCP, in.Host, power, name)
 	}
 	if len(cfg.Inputs) > 0 {
 		fmt.Fprintln(out, "  (h marks an input the panel and the menu leave out)")
@@ -508,6 +514,13 @@ func cmdSet(args []string, out *bufio.Writer, errOut *os.File) int {
 			return order.CodeUsage
 		}
 		cfg.Inputs[idx].Host = config.Host(value)
+	case "power":
+		action, ok := config.ParsePower(value)
+		if !ok {
+			fmt.Fprintf(errOut, "power must be one of %s\n", strings.Join(config.Powers(), " "))
+			return order.CodeUsage
+		}
+		cfg.Inputs[idx].Power = action
 	case "hidden":
 		on, ok := parseOnOff(value)
 		if !ok {

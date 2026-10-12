@@ -33,6 +33,11 @@ const (
 	CodeDisplayFailed = 2
 	CodeDevicesFailed = 3
 	CodeMissing       = 4
+	// CodePowerFailed says the switch worked and the machine did not do what it
+	// was told afterwards. It is its own code because it is the one failure
+	// where the keyboard and mouse are where the user wanted them: exit 3 sends
+	// someone looking for their keyboard, and this one should not.
+	CodePowerFailed = 5
 )
 
 // Result says what happened, in words meant for one line of a panel.
@@ -64,6 +69,9 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 	if len(plan.Steps) == 0 {
 		return Result{Code: CodeUsage, Message: "Nothing to run for this input."}
 	}
+	// Built before anything runs, so a machine that cannot be told to sleep
+	// says so without having moved the display first.
+	plan.After = b.Power(string(in.Power))
 
 	if dryRun {
 		return Result{
@@ -145,11 +153,26 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 		}
 	}
 
-	if string(in.Host) == config.HostOff {
-		return Result{Code: CodeOK, Message: "Sent " + label + "."}
+	// Last, and only now. Everything asked for has happened, so this machine is
+	// free to go to sleep or switch itself off. It is the one step that must not
+	// run early: sleeping first would leave the display never moved and the
+	// keyboard and mouse still here.
+	sent := "Sent " + label + "."
+	if string(in.Host) != config.HostOff {
+		sent = fmt.Sprintf("Sent %s, devices on host %s.", label, in.Host)
 	}
-	return Result{
-		Code:    CodeOK,
-		Message: fmt.Sprintf("Sent %s, devices on host %s.", label, in.Host),
+	for _, step := range plan.After {
+		if err := b.Run(ctx, step); err != nil {
+			what := "sleep"
+			if string(in.Power) == string(config.PowerShutdown) {
+				what = "shut down"
+			}
+			return Result{
+				Code:    CodePowerFailed,
+				Message: fmt.Sprintf("%s This machine did not %s.", sent, what),
+				Detail:  err.Error(),
+			}
+		}
 	}
+	return Result{Code: CodeOK, Message: sent}
 }

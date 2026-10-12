@@ -38,6 +38,7 @@ ordering.
 | `odisplay set name <input> <name>` | Rename a button |
 | `odisplay set host <input> <0-3>` | Set the Easy-Switch channel |
 | `odisplay set hidden <input> <on\|off>` | Leave an input out of the panel and the menu, without removing it |
+| `odisplay set power <input> <none\|sleep\|shutdown>` | What this machine does with itself after switching away |
 | `odisplay set display <n>` | Set the display number, for this platform only |
 | `odisplay path` | Print the config file's location |
 
@@ -367,6 +368,21 @@ machine that both are paired with.
   "devices": ["MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"]
 }
 ```
+
+`power` is what this machine does with itself once a switch has sent the
+keyboard and mouse away. The values are `none` (the default, and what a machine
+should be left as unless you want otherwise), `sleep`, and `shutdown`.
+
+It runs last, after the monitor and after every device, and only if all of them
+succeeded. A machine that slept first would leave the display never moved and the
+keyboard and mouse still here, which is the one ordering this program exists to
+prevent. A display that did not move, or a device that did not, leaves this
+machine exactly as it is.
+
+A failure is exit 5 rather than 3, because it is the one failure where your
+keyboard is where you wanted it. Suspend works for a user at the console on both
+platforms. Powering off is privileged on macOS and there is no way to ask from a
+menu, so it is attempted and a refusal is reported rather than hidden.
 
 `hidden` keeps an input out of the panel and out of the menu without removing
 it. It is a view setting, not a switch: the input keeps its name, its channel

@@ -30,6 +30,66 @@ var hosts = []string{"0", "1", "2", "3"}
 // button, and the file can be hand-edited.
 const MaxNameLength = 32
 
+// Power is what this machine does with itself once a switch has sent the
+// keyboard and mouse away.
+//
+// The zero value is the default and means nothing happens, so a settings file
+// that never mentions power says nothing about it. Sleeping the machine you are
+// leaving is the point: a desk with three computers on one monitor does not need
+// the other two awake.
+type Power string
+
+const (
+	// PowerNone leaves this machine alone. It is the default.
+	PowerNone Power = ""
+	// PowerSleep suspends it.
+	PowerSleep Power = "sleep"
+	// PowerShutdown powers it off.
+	PowerShutdown Power = "shutdown"
+)
+
+// powers is the closed set, in the order a UI should offer them.
+var powers = []Power{PowerNone, PowerSleep, PowerShutdown}
+
+// ValidPower reports whether a value is one of them. The empty string is valid
+// and means none, because that is how a file that does not mention it reads.
+func ValidPower(v string) bool {
+	for _, p := range powers {
+		if string(p) == v {
+			return true
+		}
+	}
+	return false
+}
+
+// Powers returns the closed set as words, for a message that says what to type.
+// The first is spelled out because nothing is not something to type.
+func Powers() []string {
+	out := make([]string, 0, len(powers))
+	for _, p := range powers {
+		if p == PowerNone {
+			out = append(out, "none")
+			continue
+		}
+		out = append(out, string(p))
+	}
+	return out
+}
+
+// ParsePower reads a word as an action. "none", "off" and the empty string all
+// mean the same, because they are the same word for a person typing it.
+func ParsePower(s string) (Power, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "none", "off", "no", "0":
+		return PowerNone, true
+	case "sleep", "suspend":
+		return PowerSleep, true
+	case "shutdown", "poweroff", "shut", "down":
+		return PowerShutdown, true
+	}
+	return PowerNone, false
+}
+
 // Host is an Easy-Switch channel.
 //
 // It unmarshals from a JSON string or a JSON number, because the file is meant
@@ -68,6 +128,10 @@ type Input struct {
 	// It exists for the input a machine is already on, which is noise in a
 	// list of things to switch to, and for anything unplugged for now.
 	Hidden bool `json:"hidden,omitempty"`
+	// Power is what this machine does with itself after a switch sends the
+	// keyboard and mouse away. It runs only if the whole switch succeeded, and
+	// only for the machine being left, which is this one.
+	Power Power `json:"power,omitempty"`
 }
 
 // Visible returns the inputs a panel or a menu should offer, in order. A hidden
@@ -289,6 +353,12 @@ func (c *Config) Validate() error {
 		}
 		if !ValidHost(string(in.Host)) {
 			in.Host = HostOff
+		}
+		// An action this does not know is dropped to doing nothing rather than
+		// refused. The safe direction is a machine that stays on, and a file
+		// that says something else is a file to read, not one to obey.
+		if !ValidPower(string(in.Power)) {
+			in.Power = PowerNone
 		}
 		kept = append(kept, in)
 	}

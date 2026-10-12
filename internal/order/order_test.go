@@ -16,14 +16,25 @@ import (
 // where the argv arrays can be checked without any hardware.
 type fake struct {
 	plan    backend.Plan
+	power   []backend.Step
 	planErr error
-	runErr  map[int]error // keyed by step index
-	ran     []int
+	runErr  map[int]error // keyed by position in the plan's move steps
+	// powerErr is what the action step returns, kept apart from runErr because
+	// the action is not a move and has no position among them.
+	powerErr error
+	// ran is the move steps that ran, by position. after is the action steps,
+	// as command lines, so a test can see whether it ran and in what order.
+	ran   []int
+	after []string
 }
 
 func (f *fake) Platform() string { return "fake" }
 
 func (f *fake) Monitor() string { return "ddcutil" }
+
+// power is what the fake says the platform would run afterwards, so a test can
+// see whether the ordering ran it.
+func (f *fake) Power(string) []backend.Step { return f.power }
 
 func (f *fake) Devices(context.Context) (backend.Connected, error) {
 	return backend.Connected{}, nil
@@ -56,8 +67,8 @@ func (f *fake) Run(_ context.Context, s backend.Step) error {
 			return f.runErr[i]
 		}
 	}
-	f.ran = append(f.ran, -1)
-	return nil
+	f.after = append(f.after, s.String())
+	return f.powerErr
 }
 
 // Detect is only used by the doctor check, which is not what order decides
@@ -73,6 +84,14 @@ func cfgWith(host config.Host) config.Config {
 		{Key: "usbc", Name: "X", VCP: 27, Host: "0"},
 		{Key: "dp", Name: "Mac Mini", VCP: 15, Host: host},
 	}
+	return c
+}
+
+// cfgWithPower is one input that asks this machine to do something with itself
+// afterwards.
+func cfgWithPower(host config.Host, power config.Power) config.Config {
+	c := cfgWith(host)
+	c.Inputs[1].Power = power
 	return c
 }
 
@@ -385,5 +404,123 @@ func TestAMissingProgramIsNotNothingToDo(t *testing.T) {
 	res := Switch(context.Background(), f, cfgWith("2"), "dp", false)
 	if res.Code != CodeMissing {
 		t.Errorf("code = %d, want %d", res.Code, CodeMissing)
+	}
+}
+
+// The action runs last, after the monitor and after the devices. Sleeping or
+// switching off first would leave the display never moved and the keyboard and
+// mouse still here, which is the one ordering this program exists to prevent.
+func TestPowerRunsAfterEverythingElse(t *testing.T) {
+	f := &fake{power: []backend.Step{{Bin: "/usr/bin/systemctl", Args: []string{"suspend"}}}}
+	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerSleep), "dp", false)
+	if res.Code != CodeOK {
+		t.Fatalf("code = %d (%s)", res.Code, res.Message)
+	}
+	if len(f.ran) != 3 {
+		t.Fatalf("ran move steps %v, want the monitor and two devices", f.ran)
+	}
+	if len(f.after) != 1 || f.after[0] != "/usr/bin/systemctl suspend" {
+		t.Errorf("action steps = %v, want it run once after the moves", f.after)
+	}
+}
+
+// A display that did not move means the user is still at this machine, so it
+// must not be told to sleep or switch off.
+func TestPowerDoesNotRunIfTheDisplayFailed(t *testing.T) {
+	f := &fake{
+		power:  []backend.Step{{Bin: "/usr/bin/systemctl", Args: []string{"suspend"}}},
+		runErr: map[int]error{0: errors.New("no display")},
+	}
+	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerSleep), "dp", false)
+	if res.Code != CodeDisplayFailed {
+		t.Errorf("code = %d, want %d", res.Code, CodeDisplayFailed)
+	}
+	if len(f.after) != 0 {
+		t.Errorf("the machine was told to %v after the display failed to move", f.after)
+	}
+}
+
+// The devices were not sent either, so the keyboard and mouse are still here.
+func TestPowerDoesNotRunIfADeviceFailed(t *testing.T) {
+	f := &fake{
+		power:  []backend.Step{{Bin: "/usr/bin/systemctl", Args: []string{"suspend"}}},
+		runErr: map[int]error{1: errors.New("no such host")},
+	}
+	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerSleep), "dp", false)
+	if res.Code != CodeDevicesFailed {
+		t.Errorf("code = %d, want %d", res.Code, CodeDevicesFailed)
+	}
+	if len(f.after) != 0 {
+		t.Errorf("the machine was told to %v after the devices failed to move", f.after)
+	}
+}
+
+// The one failure where the keyboard and mouse are where the user wanted them.
+// It gets its own exit code, because exit 3 sends someone looking for a keyboard
+// that is not lost.
+func TestAFailedActionIsItsOwnCode(t *testing.T) {
+	f := &fake{
+		power:    []backend.Step{{Bin: "/usr/bin/systemctl", Args: []string{"suspend"}}},
+		powerErr: errors.New("Interactive authentication required"),
+	}
+	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerSleep), "dp", false)
+	if res.Code != CodePowerFailed {
+		t.Fatalf("code = %d, want %d", res.Code, CodePowerFailed)
+	}
+	if res.Code == CodeDevicesFailed {
+		t.Error("a failed action must not share the code that means a lost keyboard")
+	}
+	if !strings.Contains(res.Message, "did not sleep") {
+		t.Errorf("message = %q, want it to say what did not happen", res.Message)
+	}
+	if !strings.Contains(res.Message, "Sent ") {
+		t.Errorf("message = %q, want it to say the switch itself worked", res.Message)
+	}
+	// And the reason is kept, because a refusal to power off is worth reading.
+	if !strings.Contains(res.Detail, "authentication") {
+		t.Errorf("detail = %q, want the reason", res.Detail)
+	}
+}
+
+func TestAShutdownSaysShutDown(t *testing.T) {
+	f := &fake{
+		power:    []backend.Step{{Bin: "/usr/sbin/pmset", Args: []string{"sleepnow"}}},
+		powerErr: errors.New("not permitted"),
+	}
+	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerShutdown), "dp", false)
+	if res.Code != CodePowerFailed {
+		t.Fatalf("code = %d, want %d", res.Code, CodePowerFailed)
+	}
+	if !strings.Contains(res.Message, "did not shut down") {
+		t.Errorf("message = %q, want it to say shutting down failed", res.Message)
+	}
+}
+
+// The dry run has to show the action, or the one command that cannot be undone
+// is the one nobody sees before running it.
+func TestTheDryRunShowsTheAction(t *testing.T) {
+	f := &fake{power: []backend.Step{{Bin: "/usr/bin/systemctl", Args: []string{"poweroff"}}}}
+	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerShutdown), "dp", true)
+	if len(f.ran) != 0 || len(f.after) != 0 {
+		t.Fatalf("a dry run ran %v and %v", f.ran, f.after)
+	}
+	if !strings.Contains(res.Message, "systemctl poweroff") {
+		t.Errorf("dry run printed %q, want the action", res.Message)
+	}
+}
+
+// Nothing set means nothing happens, and the run is exactly what it was before
+// this existed.
+func TestNoActionRunsNothingExtra(t *testing.T) {
+	f := &fake{}
+	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerNone), "dp", false)
+	if res.Code != CodeOK {
+		t.Fatalf("code = %d", res.Code)
+	}
+	if len(f.ran) != 3 {
+		t.Errorf("ran %v, want the monitor and two devices only", f.ran)
+	}
+	if len(f.after) != 0 {
+		t.Errorf("ran %v, want nothing after the devices", f.after)
 	}
 }

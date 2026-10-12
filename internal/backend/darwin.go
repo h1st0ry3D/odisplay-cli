@@ -90,6 +90,31 @@ func mustFind(name string, dirs ...string) string {
 // devices and resolves a feature index before it sends anything.
 const mxswitchTimeout = 15 * time.Second
 
+const (
+	// pmset is part of macOS and sleeps the machine without privileges.
+	pmset = "/usr/sbin/pmset"
+	// shutdown needs root. It is attempted anyway because a machine configured
+	// to allow it should work, and a refusal is reported rather than hidden:
+	// the alternative is an action that silently does nothing.
+	shutdownBin = "/sbin/shutdown"
+)
+
+// Power is the step that sleeps or powers off this Mac.
+//
+// Suspending does not need privileges. Shutting down does, and there is no way
+// to ask for one from a menu bar item, so it is attempted and the refusal is
+// reported. That is the honest outcome: better a line saying the machine will
+// not power off than one implying it will.
+func (Darwin) Power(action string) []Step {
+	switch action {
+	case "sleep":
+		return []Step{{Bin: pmset, Args: []string{"sleepnow"}}}
+	case "shutdown":
+		return []Step{{Bin: shutdownBin, Args: []string{"-h", "now"}}}
+	}
+	return nil
+}
+
 // Darwin is the macOS backend: ddcctl for the monitor, mxswitch for the
 // devices.
 //
