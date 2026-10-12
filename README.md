@@ -59,6 +59,21 @@ caller can tell the two bad outcomes apart:
 Code 2 is safe. Code 3 means you are looking at another machine without input,
 and the channel button under the mouse or keyboard is the way back.
 
+## Shortcuts
+
+A key that switches is this command and nothing else, so a shortcut cannot
+disagree with the panel or the menu about what a switch does:
+
+```sh
+odisplay switch <input>
+```
+
+Each front end documents its own, because what owns the keys differs on each
+machine: [the Omarchy panel puts them in Hyprland](https://github.com/h1st0ry3D/odisplay#shortcuts),
+and [the macOS app covers BetterTouchTool, Shortcuts and skhd](https://github.com/h1st0ry3D/odisplay-mac#shortcuts).
+Which app ends up holding the macOS Input Monitoring grant depends on which one
+runs the command, and the app's README says how to check.
+
 ## Try it before you trust it
 
 `--dry-run` builds every command and runs none of them:
