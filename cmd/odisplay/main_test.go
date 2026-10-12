@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -271,5 +273,47 @@ func TestDoctorDoesNotGrantTheRuleToEveryone(t *testing.T) {
 	t.Setenv("USER", "")
 	if got := sudoersUser(); got == "" || got == "ALL" {
 		t.Errorf("sudoersUser() = %q with no USER set, want a name that grants nothing", got)
+	}
+}
+
+// The exit codes are the contract with the panel, and the README is the place a
+// person reads them. Code 5 was missing from that table for a while, because an
+// edit replaced a three-column row in a two-column table, which does nothing and
+// says nothing about having done nothing.
+func TestTheReadmeDocumentsEveryExitCode(t *testing.T) {
+	raw, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+
+	codes := []int{
+		order.CodeOK, order.CodeUsage, order.CodeDisplayFailed,
+		order.CodeDevicesFailed, order.CodeMissing, order.CodePowerFailed,
+	}
+	for _, code := range codes {
+		if !strings.Contains(body, "\n| "+fmt.Sprint(code)+" |") {
+			t.Errorf("the README has no exit code row for %d", code)
+		}
+	}
+
+	// And no others, so a row for a number nothing returns is caught as well.
+	// The exit code table is the only one whose first cell is a number.
+	rows := 0
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "| ") {
+			continue
+		}
+		cell, _, ok := strings.Cut(strings.TrimPrefix(line, "| "), " |")
+		if !ok {
+			continue
+		}
+		if _, err := strconv.Atoi(cell); err == nil {
+			rows++
+		}
+	}
+	if rows != len(codes) {
+		t.Errorf("the README's table has %d exit codes and this program returns %d",
+			rows, len(codes))
 	}
 }
