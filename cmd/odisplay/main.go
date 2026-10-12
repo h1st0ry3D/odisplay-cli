@@ -193,6 +193,11 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 			problems++
 			continue
 		}
+		// A plan does not carry the action until switch builds one, so it is
+		// asked for here too. Without this, doctor calls a machine ready while
+		// the command that puts it to sleep is missing or is not where it is
+		// expected, and that is found out on the way out of the door.
+		plan.After = b.Power(string(in.Power))
 		for _, prog := range plan.Programs() {
 			if seen[prog] {
 				continue

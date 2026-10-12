@@ -484,7 +484,7 @@ func TestAFailedActionIsItsOwnCode(t *testing.T) {
 
 func TestAShutdownSaysShutDown(t *testing.T) {
 	f := &fake{
-		power:    []backend.Step{{Bin: "/usr/sbin/pmset", Args: []string{"sleepnow"}}},
+		power:    []backend.Step{{Bin: "/usr/bin/pmset", Args: []string{"sleepnow"}}},
 		powerErr: errors.New("not permitted"),
 	}
 	res := Switch(context.Background(), f, cfgWithPower("2", config.PowerShutdown), "dp", false)

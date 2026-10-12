@@ -322,3 +322,34 @@ func TestParsingMxswitchListWithNone(t *testing.T) {
 		}
 	}
 }
+
+// The commands that put a Mac to sleep and switch it off have to be the ones
+// macOS actually ships. They were written out from memory once, and pmset ended
+// up in /usr/sbin, which does not exist on a Mac.
+//
+// Nothing on a Linux machine can catch that, and the symptom is a sleep that
+// never happens on a machine you have already walked away from, so it is worth
+// a test that can only run here.
+func TestTheCommandsForSleepingAndShuttingDownAreThere(t *testing.T) {
+	for _, action := range []string{"sleep", "shutdown"} {
+		steps := (Darwin{}).Power(action)
+		if len(steps) != 1 {
+			t.Fatalf("%s is %d steps, want one", action, len(steps))
+		}
+		step := steps[0]
+		if _, err := os.Stat(step.Bin); err != nil {
+			t.Errorf("%s runs %s, which is not there: %v", action, step.Bin, err)
+		}
+		// sudo runs the command in its arguments, and that path is the one a
+		// sudoers rule has to name, so a wrong one is wrong twice over.
+		if step.Bin != sudo {
+			continue
+		}
+		if len(step.Args) < 2 {
+			t.Fatalf("%s has no command in it: %v", action, step.Args)
+		}
+		if _, err := os.Stat(step.Args[1]); err != nil {
+			t.Errorf("%s runs %s, which is not there: %v", action, step.Args[1], err)
+		}
+	}
+}

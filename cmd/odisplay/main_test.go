@@ -22,12 +22,15 @@ type fake struct {
 	planErr   error
 	displays  []backend.Display
 	detectErr error
+	// power is what the fake platform says it would run afterwards, so a test
+	// can see whether doctor looked at it.
+	power []backend.Step
 }
 
 func (f fake) Platform() string { return "fake" }
 func (f fake) Monitor() string  { return "ddcutil" }
 
-func (f fake) Power(string) []backend.Step { return nil }
+func (f fake) Power(string) []backend.Step { return f.power }
 func (f fake) Plan(int, int, string) (backend.Plan, error) {
 	if f.planErr != nil {
 		return backend.Plan{}, f.planErr
@@ -162,4 +165,51 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// The action runs last, so a command for it that is missing is found after
+// everything else has already happened. A plan does not carry the action until
+// switch builds one, and doctor builds its own plan, so it has to ask for the
+// action itself or it calls a machine ready while the command that puts it to
+// sleep is not there.
+func TestDoctorChecksTheActionAsWell(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "odisplay.json")
+	body := `{"version":1,"display":1,"inputs":[{"key":"dp","vcp":15,"host":"0","power":"sleep"}]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ODISPLAY_CONFIG", path)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(power []backend.Step) (int, string) {
+		t.Helper()
+		f := fake{
+			displays: []backend.Display{{Number: 1, Name: "card2-DP-6", Usable: true}},
+			power:    power,
+		}
+		var buf bytes.Buffer
+		w := bufio.NewWriter(&buf)
+		code := doctor(context.Background(), w, f, cfg)
+		w.Flush()
+		return code, buf.String()
+	}
+
+	// A command that is there must not be reported as missing, or this check
+	// would refuse to call any machine with an action configured ready.
+	code, out := run([]backend.Step{{Bin: "/bin/sh"}})
+	if code != order.CodeOK {
+		t.Errorf("code = %d with the action present, want %d:\n%s", code, order.CodeOK, out)
+	}
+
+	code, out = run([]backend.Step{{Bin: "/nowhere/pmset", Args: []string{"sleepnow"}}})
+	if code != order.CodeMissing {
+		t.Errorf("code = %d, want %d for a missing sleep command:\n%s", code, order.CodeMissing, out)
+	}
+	if !strings.Contains(out, "/nowhere/pmset") {
+		t.Errorf("output does not name the command that is missing:\n%s", out)
+	}
 }

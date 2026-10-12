@@ -90,15 +90,32 @@ func mustFind(name string, dirs ...string) string {
 // devices and resolves a feature index before it sends anything.
 const mxswitchTimeout = 15 * time.Second
 
-const (
-	// pmset is part of macOS and sleeps the machine without privileges.
-	pmset = "/usr/sbin/pmset"
-	// Shutting a Mac down needs root and there is no unprivileged equivalent.
-	// It goes through sudo so a machine with a rule for this one command works,
-	// and -n so a machine without one fails at once instead of waiting on a
-	// password prompt no one can reach from a menu bar item.
-	sudo        = "/usr/bin/sudo"
-	shutdownBin = "/sbin/shutdown"
+// sudo is how a privilege is asked for, and -n is the flag that makes it give
+// up rather than prompt. A menu bar item has no terminal to be prompted on, so
+// waiting there would hang with nothing on screen to explain it.
+const sudo = "/usr/bin/sudo"
+
+// systemDirs is where macOS keeps the commands it ships to sleep and to shut
+// down, looked in that order.
+//
+// Both the bin and the sbin directories are here because pmset is an ordinary
+// user command and shutdown is an administrative one, and writing the paths out
+// from memory put pmset in the wrong one. There is no way to check that from a
+// Linux machine, and the only place it shows up is on a Mac that is being left,
+// which is the worst moment to find out.
+//
+// This is not searchDirs: that is where programs someone installed are looked
+// for, and this is where the ones the system provides are.
+func systemDirs() []string {
+	return []string{"/usr/bin", "/usr/sbin", "/bin", "/sbin"}
+}
+
+var (
+	// pmset sleeps the machine without privileges.
+	pmsetBin = mustFind("pmset", systemDirs()...)
+	// shutdown is the one a sudoers rule has to name by its full path, so it is
+	// resolved once, here, and reported where that is written down.
+	shutdownBin = mustFind("shutdown", systemDirs()...)
 )
 
 // Power is the step that sleeps or powers off this Mac.
@@ -108,13 +125,15 @@ const (
 // refusal is reported. That is the honest outcome: better a line saying the
 // machine will not power off than one implying it will.
 //
-// The rule that makes it work is one line in sudoers, for this command only:
+// The rule that makes it work is one line in sudoers, naming shutdown by the
+// full path sudo sees. Sudoers matches the path, not the name, so this has to
+// be the same string that ends up in the rule:
 //
-//	yourname ALL=(root) NOPASSWD: /sbin/shutdown -h now
+//	yourname ALL=(root) NOPASSWD: <shutdownBin> -h now
 func (Darwin) Power(action string) []Step {
 	switch action {
 	case "sleep":
-		return []Step{{Bin: pmset, Args: []string{"sleepnow"}}}
+		return []Step{{Bin: pmsetBin, Args: []string{"sleepnow"}}}
 	case "shutdown":
 		return []Step{{Bin: sudo, Args: []string{"-n", shutdownBin, "-h", "now"}}}
 	}

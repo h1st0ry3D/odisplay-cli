@@ -387,16 +387,24 @@ privileged:
 
 - **Linux** goes through polkit, which allows `systemctl poweroff` for the user
   at the console. Over SSH, or from another user's session, it is refused.
-- **macOS** has no unprivileged route, so `sudo -n shutdown -h now` is
-  attempted. `-n` makes it fail at once rather than wait on a password prompt
-  nobody can reach from a menu. To make it work, one line in `sudoers`, for
-  this command only:
+- **macOS** has no unprivileged route, so `sudo -n` is attempted. `-n` makes it
+  fail at once rather than wait on a password prompt nobody can reach from a
+  menu. To make it work, one line in `sudoers`, for that command only, added
+  with `sudo visudo`:
 
   ```
   yourname ALL=(root) NOPASSWD: /sbin/shutdown -h now
   ```
 
-  Run `sudo visudo` to add it. Nothing else is granted.
+  A rule matches the path rather than the name, so take it from the command
+  odisplay will actually run rather than from here. This prints the whole
+  sequence, and the shutdown is its last line:
+
+  ```sh
+  odisplay switch dp --dry-run
+  ```
+
+  Nothing else is granted.
 
 `hidden` keeps an input out of the panel and out of the menu without removing
 it. It is a view setting, not a switch: the input keeps its name, its channel
