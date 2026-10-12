@@ -504,9 +504,10 @@ func TestResolveDisplayForBothMachines(t *testing.T) {
 
 // The defaults are what run on a machine that has never been configured, and
 // they were returned without validation. Every input then carried the empty
-// string as its channel, which is neither off nor a channel: on macOS the
-// backend refused it, and on Linux it became `change-host ”` — a command that
-// runs, fails, and has already moved the monitor by the time it does.
+// string as its channel, which is neither off nor a channel. On macOS the
+// backend refused it, and on Linux it became a change-host with nothing to
+// change to, which runs, fails, and has already moved the monitor by the time
+// it does.
 func TestTheDefaultsAreValidatedToo(t *testing.T) {
 	cfg, err := Load(filepath.Join(t.TempDir(), "never-written.json"))
 	if err != nil {
@@ -636,19 +637,24 @@ func TestPowerIsAbsentByDefault(t *testing.T) {
 	}
 }
 
-func TestParsePowerReadsTheWordsPeopleType(t *testing.T) {
-	ok := map[string]Power{
-		"": PowerNone, "none": PowerNone, "off": PowerNone, "OFF": PowerNone,
-		"sleep": PowerSleep, "suspend": PowerSleep, "Sleep": PowerSleep,
-		"shutdown": PowerShutdown, "poweroff": PowerShutdown, " shutdown ": PowerShutdown,
+// Three words, the ones `set power` documents, and nothing else.
+func TestParsePowerReadsTheThreeWordsAndNothingElse(t *testing.T) {
+	words := map[string]Power{
+		"none": PowerNone, "NONE": PowerNone,
+		"sleep": PowerSleep, "Sleep": PowerSleep,
+		"shutdown": PowerShutdown, " shutdown ": PowerShutdown,
 	}
-	for in, want := range ok {
+	for in, want := range words {
 		got, valid := ParsePower(in)
 		if !valid || got != want {
 			t.Errorf("ParsePower(%q) = %q, %v; want %q", in, got, valid, want)
 		}
 	}
-	for _, in := range []string{"hibernate", "rebot", "yes"} {
+	// Anything else is refused rather than guessed at, and "off" most of all:
+	// it is the word for switching a channel off, so reading it as powering
+	// this machine off would be the worst guess available.
+	refused := []string{"", "off", "0", "yes", "suspend", "poweroff", "shut", "down", "hibernate"}
+	for _, in := range refused {
 		if _, valid := ParsePower(in); valid {
 			t.Errorf("ParsePower(%q) was accepted", in)
 		}

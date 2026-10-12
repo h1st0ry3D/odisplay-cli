@@ -327,9 +327,9 @@ func TestParsingMxswitchListWithNone(t *testing.T) {
 // macOS actually ships. They were written out from memory once, and pmset ended
 // up in /usr/sbin, which does not exist on a Mac.
 //
-// Nothing on a Linux machine can catch that, and the symptom is a sleep that
-// never happens on a machine you have already walked away from, so it is worth
-// a test that can only run here.
+// Nothing on a Linux machine can catch that, and the symptom is a Mac that does
+// not sleep when you switch away from it, so it needs a test that only a Mac can
+// run.
 func TestTheCommandsForSleepingAndShuttingDownAreThere(t *testing.T) {
 	for _, action := range []string{"sleep", "shutdown"} {
 		steps := (Darwin{}).Power(action)
@@ -373,8 +373,8 @@ func TestGrantNamesTheShutdownCommandAndNotTheSudo(t *testing.T) {
 		t.Errorf("the rule would name %s, which is not there: %v", fields[0], err)
 	}
 
-	// The step and the rule have to be the same command. Two copies that
-	// drifted would be a rule that silently never fires.
+	// The step and the rule have to be the same command, because sudoers
+	// matches the path: a rule naming a different one is never used.
 	step := (Darwin{}).Power("shutdown")
 	if len(step) != 1 {
 		t.Fatalf("Power(shutdown) is %d steps, want one", len(step))

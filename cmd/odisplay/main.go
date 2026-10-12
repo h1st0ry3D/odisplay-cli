@@ -193,12 +193,12 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 	seen := map[string]bool{}
 	problems := 0
 	missing := 0
-	// granted is each command a rules file has to name, once, in the order it
-	// was found, so the same line is not printed for every input using it.
-	var granted []string
+	// grants is each command a rules file has to name, once, in the order it was
+	// found, so the same line is not printed for every input using it.
+	var grants []string
 	seenGrant := map[string]bool{}
 	for _, in := range cfg.Inputs {
-		plan, err := b.Plan(cfg.Display, in.VCP, string(in.Host))
+		plan, err := order.Plan(b, cfg, in)
 		if err != nil {
 			// A value the config got wrong is not a missing program. The
 			// same condition on `switch` exits 1, so it has to exit 1 here
@@ -207,21 +207,15 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 			problems++
 			continue
 		}
-		// A plan does not carry the action until switch builds one, so it is
-		// asked for here too. Without this, doctor calls a machine ready while
-		// the command that puts it to sleep is missing or is not where it is
-		// expected, and that is found out on the way out of the door.
-		plan.After = b.Power(string(in.Power))
-
-		// The command a rule has to name is not always the program a step
-		// runs: shutting a Mac down runs sudo, and shutdown is inside it. Both
-		// have to be there, so both are checked.
+		// The command a rule has to name is not always the program a step runs:
+		// shutting a Mac down runs sudo, and shutdown is inside it. Both have
+		// to be there, so both are checked.
 		programs := plan.Programs()
 		if grant := b.Grant(string(in.Power)); grant != "" {
 			programs = append(programs, strings.Fields(grant)[0])
 			if !seenGrant[grant] {
 				seenGrant[grant] = true
-				granted = append(granted, grant)
+				grants = append(grants, grant)
 			}
 		}
 		for _, prog := range programs {
@@ -237,12 +231,12 @@ func doctor(ctx context.Context, out *bufio.Writer, b backend.Backend, cfg confi
 			}
 		}
 	}
-	if len(granted) > 0 {
+	if len(grants) > 0 {
 		fmt.Fprintln(out, "\nNothing here can prompt for a password, so this has to be allowed ahead of")
 		fmt.Fprintln(out, "time. A rules file matches the path rather than the name of the program, so it")
 		fmt.Fprintln(out, "has to name the command in full. Add it with `sudo visudo`, or as a file of its")
 		fmt.Fprintln(out, "own in /etc/sudoers.d:")
-		for _, grant := range granted {
+		for _, grant := range grants {
 			fmt.Fprintf(out, "\n    %s ALL=(root) NOPASSWD: %s\n", sudoersUser(), grant)
 		}
 	}

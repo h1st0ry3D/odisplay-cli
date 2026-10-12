@@ -76,15 +76,17 @@ func Powers() []string {
 	return out
 }
 
-// ParsePower reads a word as an action. "none", "off" and the empty string all
-// mean the same, because they are the same word for a person typing it.
+// ParsePower reads a word as an action, which is one of the three `set power`
+// documents. Anything else is refused rather than guessed at: "off" would be the
+// hardest to guess, because it is the word for switching a channel off and would
+// read as powering this machine off.
 func ParsePower(s string) (Power, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "none", "off", "no", "0":
+	case "none":
 		return PowerNone, true
-	case "sleep", "suspend":
+	case "sleep":
 		return PowerSleep, true
-	case "shutdown", "poweroff", "shut", "down":
+	case "shutdown":
 		return PowerShutdown, true
 	}
 	return PowerNone, false

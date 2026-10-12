@@ -54,6 +54,7 @@ caller can tell the two bad outcomes apart:
 | 2 | The display did not move, so the devices were left alone |
 | 3 | The display moved but the devices did not |
 | 4 | A program this needs is not installed |
+| 5 | The switch worked, but this machine did not sleep or shut down |
 
 Code 2 is safe. Code 3 means you are looking at another machine without input,
 and the channel button under the mouse or keyboard is the way back.

@@ -47,6 +47,23 @@ type Result struct {
 	Detail  string
 }
 
+// Plan is everything a switch would run for an input: the moves, and what this
+// machine does with itself afterwards.
+//
+// Switch and doctor both ask for it here. Doctor used to build its own and ask
+// for the action separately, which left a machine called ready while the command
+// that puts it to sleep was not there at all.
+func Plan(b backend.Backend, cfg config.Config, in config.Input) (backend.Plan, error) {
+	plan, err := b.Plan(cfg.Display, in.VCP, string(in.Host))
+	if err != nil {
+		return plan, err
+	}
+	// Before anything runs, so a machine that cannot be told to sleep says so
+	// without having moved the display first.
+	plan.After = b.Power(string(in.Power))
+	return plan, nil
+}
+
 // Switch moves the monitor to the named input and then, if that input has a
 // channel set, the devices with it.
 //
@@ -62,16 +79,13 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 		label = in.Key
 	}
 
-	plan, err := b.Plan(cfg.Display, in.VCP, string(in.Host))
+	plan, err := Plan(b, cfg, in)
 	if err != nil {
 		return Result{Code: CodeUsage, Message: err.Error()}
 	}
 	if len(plan.Steps) == 0 {
 		return Result{Code: CodeUsage, Message: "Nothing to run for this input."}
 	}
-	// Built before anything runs, so a machine that cannot be told to sleep
-	// says so without having moved the display first.
-	plan.After = b.Power(string(in.Power))
 
 	if dryRun {
 		return Result{
@@ -163,8 +177,10 @@ func Switch(ctx context.Context, b backend.Backend, cfg config.Config, key strin
 	}
 	for _, step := range plan.After {
 		if err := b.Run(ctx, step); err != nil {
+			// The two names it can be, because nothing else reaches here: a
+			// machine with no action set has no steps to fail.
 			what := "sleep"
-			if string(in.Power) == string(config.PowerShutdown) {
+			if in.Power == config.PowerShutdown {
 				what = "shut down"
 			}
 			return Result{

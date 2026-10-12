@@ -423,10 +423,10 @@ func flatten(s string) string {
 // disagree about which channels exist.
 //
 // An empty channel reaches here when a settings file has no "host" for an
-// input. That used to become `change-host ”` on Linux: a command that runs,
-// fails, and has already moved the monitor by the time it does. Caught here, it
-// stops before anything runs, which is the direction that costs nobody their
-// keyboard.
+// input. That used to become a change-host with nothing to change to, a command
+// that runs, fails, and has already moved the monitor by the time it does.
+// Caught here, it stops before anything runs, which is the direction that costs
+// nobody their keyboard.
 func validChannel(channel string) error {
 	n, err := strconv.Atoi(channel)
 	if err != nil || n < 1 || n > 3 {

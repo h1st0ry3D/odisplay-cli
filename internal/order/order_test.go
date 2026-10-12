@@ -194,7 +194,7 @@ func TestHostOffRunsOneStep(t *testing.T) {
 	}
 }
 
-// The whole point of the flag: nothing runs.
+// With the flag set, nothing runs.
 func TestDryRunExecutesNothing(t *testing.T) {
 	f := &fake{}
 	res := Switch(context.Background(), f, cfgWith("2"), "dp", true)
@@ -285,7 +285,7 @@ func TestEmptyPlanRunsNothing(t *testing.T) {
 //
 // It said "ddcutil" on every platform. On a Mac that sent someone looking for a
 // Linux program they had never heard of, while the one they had in fact
-// installed — ddcctl — was the one being missed. A wrong name here costs more
+// installed, ddcctl, was the one being missed. A wrong name here costs more
 // than a wrong name usually does, because it is read at the moment nothing
 // works and the obvious next step is to go and install the wrong thing.
 func TestTheMissingProgramIsNamedFromTheStepThatFailed(t *testing.T) {

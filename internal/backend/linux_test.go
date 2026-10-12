@@ -383,7 +383,7 @@ func TestInstalledAgreesWithWhatRunFinds(t *testing.T) {
 }
 
 // An empty channel means the settings file had no "host" for this input. That
-// used to produce `solaar config '<device>' change-host ”`, which runs, fails,
+// used to produce a solaar change-host with nothing after it, which runs, fails,
 // and has already moved the monitor by then. It is refused before the monitor
 // moves instead, which is the direction that costs nobody their keyboard.
 func TestLinuxRefusesAnEmptyChannel(t *testing.T) {
