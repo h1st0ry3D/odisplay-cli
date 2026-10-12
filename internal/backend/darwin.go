@@ -93,24 +93,30 @@ const mxswitchTimeout = 15 * time.Second
 const (
 	// pmset is part of macOS and sleeps the machine without privileges.
 	pmset = "/usr/sbin/pmset"
-	// shutdown needs root. It is attempted anyway because a machine configured
-	// to allow it should work, and a refusal is reported rather than hidden:
-	// the alternative is an action that silently does nothing.
+	// Shutting a Mac down needs root and there is no unprivileged equivalent.
+	// It goes through sudo so a machine with a rule for this one command works,
+	// and -n so a machine without one fails at once instead of waiting on a
+	// password prompt no one can reach from a menu bar item.
+	sudo        = "/usr/bin/sudo"
 	shutdownBin = "/sbin/shutdown"
 )
 
 // Power is the step that sleeps or powers off this Mac.
 //
-// Suspending does not need privileges. Shutting down does, and there is no way
-// to ask for one from a menu bar item, so it is attempted and the refusal is
-// reported. That is the honest outcome: better a line saying the machine will
-// not power off than one implying it will.
+// Suspending needs no privileges. Shutting down does, and there is no way to
+// ask for one from a menu bar item, so it is attempted through sudo and a
+// refusal is reported. That is the honest outcome: better a line saying the
+// machine will not power off than one implying it will.
+//
+// The rule that makes it work is one line in sudoers, for this command only:
+//
+//	yourname ALL=(root) NOPASSWD: /sbin/shutdown -h now
 func (Darwin) Power(action string) []Step {
 	switch action {
 	case "sleep":
 		return []Step{{Bin: pmset, Args: []string{"sleepnow"}}}
 	case "shutdown":
-		return []Step{{Bin: shutdownBin, Args: []string{"-h", "now"}}}
+		return []Step{{Bin: sudo, Args: []string{"-n", shutdownBin, "-h", "now"}}}
 	}
 	return nil
 }

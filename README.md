@@ -380,9 +380,23 @@ prevent. A display that did not move, or a device that did not, leaves this
 machine exactly as it is.
 
 A failure is exit 5 rather than 3, because it is the one failure where your
-keyboard is where you wanted it. Suspend works for a user at the console on both
-platforms. Powering off is privileged on macOS and there is no way to ask from a
-menu, so it is attempted and a refusal is reported rather than hidden.
+keyboard is where you wanted it.
+
+Suspend works for a user at the console on both platforms. Powering off is
+privileged:
+
+- **Linux** goes through polkit, which allows `systemctl poweroff` for the user
+  at the console. Over SSH, or from another user's session, it is refused.
+- **macOS** has no unprivileged route, so `sudo -n shutdown -h now` is
+  attempted. `-n` makes it fail at once rather than wait on a password prompt
+  nobody can reach from a menu. To make it work, one line in `sudoers`, for
+  this command only:
+
+  ```
+  yourname ALL=(root) NOPASSWD: /sbin/shutdown -h now
+  ```
+
+  Run `sudo visudo` to add it. Nothing else is granted.
 
 `hidden` keeps an input out of the panel and out of the menu without removing
 it. It is a view setting, not a switch: the input keeps its name, its channel
