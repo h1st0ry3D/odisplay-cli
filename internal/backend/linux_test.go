@@ -438,3 +438,35 @@ func TestLinuxAsksForNoPassword(t *testing.T) {
 		}
 	}
 }
+
+// Turning the monitor off is VCP 0xD6 with the off value, and on is the same
+// feature with the on value. Value 5 is not used: it is write-only on the
+// monitors that have it, so a monitor turned off that way cannot be read or
+// told to come back.
+func TestLinuxDisplayPowerWritesThePowerFeature(t *testing.T) {
+	off, err := (Linux{}).DisplayPower(2, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOff := Step{Bin: "/usr/bin/ddcutil", Args: []string{"setvcp", "0xd6", "0x04", "--display", "2"}}
+	if !reflect.DeepEqual(off, wantOff) {
+		t.Errorf("off = %+v, want %+v", off, wantOff)
+	}
+
+	on, err := (Linux{}).DisplayPower(2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOn := Step{Bin: "/usr/bin/ddcutil", Args: []string{"setvcp", "0xd6", "0x01", "--display", "2"}}
+	if !reflect.DeepEqual(on, wantOn) {
+		t.Errorf("on = %+v, want %+v", on, wantOn)
+	}
+}
+
+// A number ddcutil would not accept is refused before it becomes an argument,
+// the same as a switch would be.
+func TestLinuxDisplayPowerRefusesANonDisplayNumber(t *testing.T) {
+	if _, err := (Linux{}).DisplayPower(0, false); err == nil {
+		t.Error("accepted display 0")
+	}
+}

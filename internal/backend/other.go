@@ -28,6 +28,12 @@ func (Other) Plan(int, int, string) (Plan, error) {
 	return Plan{}, errors.New("odisplay supports Linux and macOS only")
 }
 
+// DisplayPower refuses like the rest. Turning a display off is not something a
+// platform this tool does not support can be assumed to do.
+func (Other) DisplayPower(int, bool) (Step, error) {
+	return Step{}, errors.New("odisplay supports Linux and macOS only")
+}
+
 func (Other) Run(context.Context, Step) error {
 	return errors.New("odisplay supports Linux and macOS only")
 }

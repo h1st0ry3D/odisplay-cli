@@ -54,7 +54,10 @@ type Result struct {
 // for the action separately, which left a machine called ready while the command
 // that puts it to sleep was not there at all.
 func Plan(b backend.Backend, cfg config.Config, in config.Input) (backend.Plan, error) {
-	plan, err := b.Plan(cfg.Display, in.VCP, string(in.Host))
+	// This machine's number, not the shared default. The same monitor is a
+	// different index under ddcutil than under ddcctl, which is why the file
+	// carries one per platform; passing the default here silently ignored it.
+	plan, err := b.Plan(cfg.DisplayNumber(), in.VCP, string(in.Host))
 	if err != nil {
 		return plan, err
 	}
@@ -62,6 +65,46 @@ func Plan(b backend.Backend, cfg config.Config, in config.Input) (backend.Plan, 
 	// without having moved the display first.
 	plan.After = b.Power(string(in.Power))
 	return plan, nil
+}
+
+// DisplayPower turns the monitor off, or back on where it still answers, and
+// moves nothing else. It is the one action here that cannot leave a keyboard on
+// another machine, because it never asks where the keyboard is.
+//
+// The display number is this machine's: the same monitor can be a different
+// number under ddcutil than under ddcctl, and that is why the config keeps one
+// per platform.
+func DisplayPower(ctx context.Context, b backend.Backend, cfg config.Config, on, dryRun bool) Result {
+	word := "off"
+	if on {
+		word = "on"
+	}
+	step, err := b.DisplayPower(cfg.DisplayNumber(), on)
+	if err != nil {
+		return Result{Code: CodeUsage, Message: err.Error()}
+	}
+	if dryRun {
+		return Result{
+			Code:    CodeOK,
+			Message: fmt.Sprintf("The display, on %s, would run:\n%s", b.Platform(), step.String()),
+		}
+	}
+	if err := b.Run(ctx, step); err != nil {
+		if errors.Is(err, backend.ErrMissing) {
+			return Result{
+				Code: CodeMissing,
+				Message: fmt.Sprintf("%s is not installed, so the display cannot be turned %s.",
+					filepath.Base(step.Bin), word),
+				Detail: err.Error(),
+			}
+		}
+		return Result{
+			Code:    CodeDisplayFailed,
+			Message: fmt.Sprintf("Could not turn the display %s.", word),
+			Detail:  err.Error(),
+		}
+	}
+	return Result{Code: CodeOK, Message: "Turned the display " + word + "."}
 }
 
 // Switch moves the monitor to the named input and then, if that input has a

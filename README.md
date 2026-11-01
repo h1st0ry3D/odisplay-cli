@@ -31,6 +31,8 @@ ordering.
 | --- | --- |
 | `odisplay switch <input>` | Move the monitor, then the devices |
 | `odisplay switch <input> --dry-run` | Print the commands, run none of them |
+| `odisplay display <off\|on>` | Turn only the monitor off or back on; this machine keeps running |
+| `odisplay display <off\|on> --dry-run` | Print the one command, run none of it |
 | `odisplay plan <input>` | The same dry run, as a name you can bind to a key |
 | `odisplay list` | Show the configured inputs and the Logitech devices |
 | `odisplay list --json` | The same, for a program to read rather than a person. Does not look for devices; see below |
@@ -66,6 +68,12 @@ disagree with the panel or the menu about what a switch does:
 
 ```sh
 odisplay switch <input>
+```
+
+The monitor's own power is its own call, so it binds the same way:
+
+```sh
+odisplay display off
 ```
 
 Each front end documents its own, because what owns the keys differs on each
@@ -285,6 +293,44 @@ finds the mouse again and the keyboard does not move.
 There is no way to tell those apart from here, so both calls are made and the
 second is harmless when it repeats. If the keyboard does not follow, that is
 this, and the button underneath is the way to move it.
+
+### Turning only the display off
+
+`odisplay display off` sends the monitor's own power mode and nothing else. It
+is not the `power sleep` action on an input: no keyboard or mouse move, no
+session lock, and this machine keeps running. That is what makes it safe to
+bind, and what lets a stream or a download carry on while the panel is dark.
+
+| Platform | What runs |
+|---|---|
+| Linux | `ddcutil setvcp 0xd6 0x04 --display <n>` |
+| macOS, Apple Silicon with m1ddc | `m1ddc display <n> set standby 4` |
+| macOS, Intel with ddcctl | `pmset displaysleepnow` |
+
+Value 4 is the usual MCCS power mode for off, and the one the Dell advertises
+alongside 1. Value 5, which some monitors call a hard off, is write-only: the
+monitor stops answering a read, and there is no reliable way to ask it back.
+
+`odisplay display on` is the same feature with value 1, or `caffeinate -u -t 1`
+on an Intel Mac, where ddcctl's `-p` was made a no-op after it bricked monitors.
+Many monitors stop answering DDC/CI while they are off, so the monitor's own
+power button is the surest way back. `display on` works when the monitor still
+answers.
+
+Look before running it, like any other command that touches the hardware:
+
+```sh
+odisplay display off --dry-run
+```
+
+```
+The display, on linux, would run:
+/usr/bin/ddcutil setvcp 0xd6 0x04 --display 1
+```
+
+A monitor that does not answer is exit 2, the same code a switch uses when the
+display did not move. A missing program is exit 4. Neither can lose a keyboard:
+nothing here moves one.
 
 ### The display number
 

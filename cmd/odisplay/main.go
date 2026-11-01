@@ -41,6 +41,8 @@ func run(args []string) int {
 	switch args[0] {
 	case "switch":
 		return cmdSwitch(ctx, args[1:], out, errOut)
+	case "display":
+		return cmdDisplay(ctx, args[1:], out, errOut)
 	case "list":
 		return cmdList(ctx, args[1:], out, errOut)
 	case "set":
@@ -65,6 +67,7 @@ func usage(w io.Writer) {
 	fmt.Fprint(w, `odisplay - switch a monitor input, and the devices that go with it
 
   odisplay switch <input> [--dry-run]   move the monitor, then the keyboard and mouse
+  odisplay display <off|on> [--dry-run]  turn only the monitor off or on, leaving this machine running
   odisplay plan <input>                 print the commands without running them
   odisplay list                         show the configured inputs
   odisplay list --json                  the same, for the panel to read
@@ -131,6 +134,26 @@ func cmdSwitch(ctx context.Context, args []string, out *bufio.Writer, errOut *os
 		return order.CodeUsage
 	}
 	res := order.Switch(ctx, backend.New(cfg.Devices), cfg, rest[0], dry)
+	fmt.Fprintln(out, res.Message)
+	if res.Detail != "" && res.Code != order.CodeOK {
+		fmt.Fprintln(errOut, res.Detail)
+	}
+	return res.Code
+}
+
+// display is the monitor's own power mode, not this machine's. It is one step
+// and moves no devices, so it has nothing to order against a switch.
+func cmdDisplay(ctx context.Context, args []string, out *bufio.Writer, errOut *os.File) int {
+	rest, dry := parseDryRun(args)
+	if len(rest) != 1 || (rest[0] != "off" && rest[0] != "on") {
+		fmt.Fprintln(errOut, "display takes off or on")
+		return order.CodeUsage
+	}
+	cfg, ok := load(errOut)
+	if !ok {
+		return order.CodeUsage
+	}
+	res := order.DisplayPower(ctx, backend.New(cfg.Devices), cfg, rest[0] == "on", dry)
 	fmt.Fprintln(out, res.Message)
 	if res.Detail != "" && res.Code != order.CodeOK {
 		fmt.Fprintln(errOut, res.Detail)

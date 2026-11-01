@@ -107,6 +107,15 @@ func (p Plan) Programs() []string {
 	return out
 }
 
+// MCCS power mode is VCP 0xD6. Value 1 is on and value 4 is off, which is the
+// usual pair a DDC/CI monitor advertises. Value 5 is a write-only "turn off"
+// that some monitors offer and cannot be read back, so it is not used here.
+const (
+	vcpPowerMode = 0xd6
+	vcpPowerOn   = 0x01
+	vcpPowerOff  = 0x04
+)
+
 // Display is one monitor the machine can see.
 type Display struct {
 	// Number is the index the program itself uses, read from its own output.
@@ -188,6 +197,10 @@ type Backend interface {
 	Monitor() string
 	// Plan builds the steps. It does not run anything.
 	Plan(display, vcp int, channel string) (Plan, error)
+	// DisplayPower builds the single step that turns the monitor off, or back
+	// on where the monitor still answers DDC/CI. It moves no devices: this is
+	// the monitor's own power mode, not this machine's.
+	DisplayPower(display int, on bool) (Step, error)
 	// Power builds what this machine does with itself after a switch, which is
 	// nothing for an action that does nothing. It is empty for anything it does
 	// not recognise.

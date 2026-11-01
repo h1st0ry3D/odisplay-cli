@@ -388,3 +388,47 @@ func TestGrantNamesTheShutdownCommandAndNotTheSudo(t *testing.T) {
 		t.Errorf("Grant(sleep) = %q, but pmset needs no password", got)
 	}
 }
+
+// Turning the monitor off uses the DDC power feature when m1ddc is the monitor
+// program. m1ddc calls VCP 0xD6 "standby"; the value is the MCCS value, not its
+// own on/off words. The Intel fallback is the system display sleep, because
+// ddcctl's -p was made a no-op after it bricked monitors.
+func TestDarwinDisplayPowerUsesTheProgramThisMacHas(t *testing.T) {
+	off, err := (Darwin{}).DisplayPower(3, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on, err := (Darwin{}).DisplayPower(3, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if monitorProgram() == m1ddc {
+		wantOff := Step{Bin: m1ddc, Args: []string{"display", "3", "set", "standby", "4"}}
+		wantOn := Step{Bin: m1ddc, Args: []string{"display", "3", "set", "standby", "1"}}
+		if !reflect.DeepEqual(off, wantOff) {
+			t.Errorf("off = %+v, want %+v", off, wantOff)
+		}
+		if !reflect.DeepEqual(on, wantOn) {
+			t.Errorf("on = %+v, want %+v", on, wantOn)
+		}
+		return
+	}
+
+	wantOff := Step{Bin: pmsetBin, Args: []string{"displaysleepnow"}}
+	if !reflect.DeepEqual(off, wantOff) {
+		t.Errorf("off = %+v, want %+v", off, wantOff)
+	}
+	if on.Bin != caffeinateBin {
+		t.Errorf("on uses %q, want caffeinate", on.Bin)
+	}
+}
+
+func TestDarwinDisplayPowerRefusesANonDisplayNumber(t *testing.T) {
+	if monitorProgram() != m1ddc {
+		t.Skip("the system display sleep does not use a display number")
+	}
+	if _, err := (Darwin{}).DisplayPower(0, false); err == nil {
+		t.Error("accepted display 0")
+	}
+}

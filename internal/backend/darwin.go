@@ -121,6 +121,9 @@ func systemDirs() []string {
 var (
 	// pmset sleeps the machine without privileges.
 	pmsetBin = mustFind("pmset", systemDirs()...)
+	// caffeinate asserts user activity, which is how a display that was put to
+	// sleep by pmset is woken again without touching the machine's power state.
+	caffeinateBin = mustFind("caffeinate", systemDirs()...)
 	// shutdown is the one a sudoers rule has to name by its full path, so it is
 	// resolved once, here, and reported where that is written down.
 	shutdownBin = mustFind("shutdown", systemDirs()...)
@@ -202,6 +205,39 @@ func (Darwin) Monitor() string {
 		return filepath.Base(m)
 	}
 	return "m1ddc"
+}
+
+// DisplayPower turns the monitor's own power mode off or on.
+//
+// m1ddc can write VCP 0xD6 through its `standby` command, which is not in its
+// usage text but has been there since 2021. Its value is the MCCS one: 4 is off
+// and 1 is on. Writing 2, which is what m1ddc's `off` word becomes, is a standby
+// value the Dell does not advertise, so the number is passed instead.
+//
+// ddcctl's -p used to be a DPMS toggle and is now a documented no-op because it
+// bricked monitors, so an Intel Mac falls back to the system's own display
+// sleep. That sleeps every display rather than only the DDC one, but it is the
+// honest fallback: the monitor is dark and the Mac keeps running either way.
+func (Darwin) DisplayPower(display int, on bool) (Step, error) {
+	if mon := monitorProgram(); mon == m1ddc {
+		if display < 1 {
+			return Step{}, fmt.Errorf("display %d is not a display number: it must be 1 or more", display)
+		}
+		value := vcpPowerOff
+		if on {
+			value = vcpPowerOn
+		}
+		return Step{
+			Bin:  mon,
+			Args: []string{"display", strconv.Itoa(display), "set", "standby", strconv.Itoa(value)},
+		}, nil
+	}
+	if on {
+		// -u is the user-activity assertion that wakes the display. -t bounds it,
+		// so this returns rather than holding the assertion for the session.
+		return Step{Bin: caffeinateBin, Args: []string{"-u", "-t", "1"}}, nil
+	}
+	return Step{Bin: pmsetBin, Args: []string{"displaysleepnow"}}, nil
 }
 
 // Plan builds the steps. The monitor is always first.

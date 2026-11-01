@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -44,6 +46,21 @@ func (f *fake) Devices(context.Context) (backend.Connected, error) {
 	return backend.Connected{}, nil
 }
 
+// DisplayPower builds one step that the fake records like any other run.
+func (f *fake) DisplayPower(display int, on bool) (backend.Step, error) {
+	if f.planErr != nil {
+		return backend.Step{}, f.planErr
+	}
+	word := "off"
+	if on {
+		word = "on"
+	}
+	return backend.Step{
+		Bin:  "/usr/bin/ddcutil",
+		Args: []string{"setvcp", "0xd6", word, "--display", fmt.Sprint(display)},
+	}, nil
+}
+
 func (f *fake) Plan(display, vcp int, channel string) (backend.Plan, error) {
 	if f.planErr != nil {
 		return backend.Plan{}, f.planErr
@@ -51,7 +68,7 @@ func (f *fake) Plan(display, vcp int, channel string) (backend.Plan, error) {
 	if f.plan.Platform == "" {
 		f.plan.Platform = "fake"
 		f.plan.Steps = []backend.Step{
-			{Bin: "/usr/bin/ddcutil", Args: []string{"setvcp", "60", "0x0f", "--display", "1"}},
+			{Bin: "/usr/bin/ddcutil", Args: []string{"setvcp", "60", "0x0f", "--display", strconv.Itoa(display)}},
 		}
 		if channel != "0" {
 			for _, d := range []string{"MX Keys S", "LIFT VERTICAL ERGONOMIC MOUSE"} {
@@ -526,5 +543,111 @@ func TestNoActionRunsNothingExtra(t *testing.T) {
 	}
 	if len(f.after) != 0 {
 		t.Errorf("ran %v, want nothing after the devices", f.after)
+	}
+}
+
+// Turning the display off is one step and moves no devices. It is not the
+// machine's own power action: the computer, its sessions and anything reading
+// its framebuffer keep running.
+func TestDisplayPowerRunsOneStepAndMovesNothing(t *testing.T) {
+	f := &fake{}
+	cfg := cfgWith("2")
+	res := DisplayPower(context.Background(), f, cfg, false, false)
+	if res.Code != CodeOK {
+		t.Fatalf("code = %d (%s)", res.Code, res.Message)
+	}
+	if len(f.ran) != 0 {
+		t.Errorf("ran move steps %v, want none", f.ran)
+	}
+	if len(f.after) != 1 {
+		t.Fatalf("after = %v, want one display step", f.after)
+	}
+	if !strings.Contains(f.after[0], "off") {
+		t.Errorf("step = %q, want it to turn the display off", f.after[0])
+	}
+}
+
+// The dry run prints the one command and runs none of it, because the command
+// that darkens a screen is worth reading before it happens.
+func TestDisplayPowerDryRunRunsNothing(t *testing.T) {
+	f := &fake{}
+	res := DisplayPower(context.Background(), f, cfgWith("2"), false, true)
+	if len(f.after) != 0 {
+		t.Fatalf("a dry run ran %v", f.after)
+	}
+	if !strings.Contains(res.Message, "would run") || !strings.Contains(res.Message, "setvcp") {
+		t.Errorf("dry run printed %q, want the command", res.Message)
+	}
+}
+
+// A display that did not answer is not a lost keyboard, so it keeps the code
+// that says the display did not move.
+func TestDisplayPowerReportsADisplayFailure(t *testing.T) {
+	f := &fake{powerErr: errors.New("DDC communication failed")}
+	res := DisplayPower(context.Background(), f, cfgWith("2"), false, false)
+	if res.Code != CodeDisplayFailed {
+		t.Errorf("code = %d, want %d", res.Code, CodeDisplayFailed)
+	}
+	if !strings.Contains(res.Message, "Could not turn the display off") {
+		t.Errorf("message = %q", res.Message)
+	}
+	if !strings.Contains(res.Detail, "DDC communication") {
+		t.Errorf("detail = %q, want the reason", res.Detail)
+	}
+}
+
+func TestDisplayPowerReportsAMissingProgram(t *testing.T) {
+	f := &fake{powerErr: backend.ErrMissing}
+	res := DisplayPower(context.Background(), f, cfgWith("2"), false, false)
+	if res.Code != CodeMissing {
+		t.Errorf("code = %d, want %d", res.Code, CodeMissing)
+	}
+	if !strings.Contains(res.Message, "ddcutil") {
+		t.Errorf("message = %q, want the missing program named", res.Message)
+	}
+}
+
+// The number is this machine's entry, not the shared default. A Mac and a Linux
+// box number the same monitor differently, and turning off the wrong one is the
+// failure this per-platform rule exists to prevent.
+func TestDisplayPowerUsesThisMachinesNumber(t *testing.T) {
+	f := &fake{}
+	cfg := cfgWith("2")
+	cfg.Displays = map[string]int{"linux": 1, "darwin": 4}
+	want := 4
+	if runtime.GOOS != "darwin" {
+		want = 1
+	}
+	res := DisplayPower(context.Background(), f, cfg, false, true)
+	if res.Code != CodeOK {
+		t.Fatalf("code = %d (%s)", res.Code, res.Message)
+	}
+	if !strings.Contains(res.Message, fmt.Sprintf("--display %d", want)) {
+		t.Errorf("dry run printed %q, want display %d", res.Message, want)
+	}
+}
+
+// A switch moves the monitor this machine numbers, not the shared default. The
+// same Dell is 1 under ddcutil and 4 under ddcctl, and passing the default here
+// was a switch that moved nothing while the keyboard and mouse still left.
+func TestSwitchUsesThisMachinesDisplayNumber(t *testing.T) {
+	f := &fake{}
+	cfg := cfgWith("2")
+	cfg.Display = 2
+	cfg.Displays = map[string]int{"linux": 1, "darwin": 4}
+	want := 4
+	if runtime.GOOS != "darwin" {
+		want = 1
+	}
+
+	res := Switch(context.Background(), f, cfg, "dp", true)
+	if res.Code != CodeOK {
+		t.Fatalf("code = %d (%s)", res.Code, res.Message)
+	}
+	if !strings.Contains(res.Message, fmt.Sprintf("--display %d", want)) {
+		t.Errorf("dry run printed %q, want display %d", res.Message, want)
+	}
+	if strings.Contains(res.Message, "--display 2") {
+		t.Errorf("dry run used the shared default instead of this machine's entry:\n%s", res.Message)
 	}
 }

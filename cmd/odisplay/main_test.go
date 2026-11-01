@@ -36,6 +36,9 @@ func (f fake) Monitor() string  { return "ddcutil" }
 
 func (f fake) Power(string) []backend.Step { return f.power }
 func (f fake) Grant(string) string         { return f.grant }
+func (f fake) DisplayPower(int, bool) (backend.Step, error) {
+	return backend.Step{Bin: "/usr/bin/ddcutil"}, nil
+}
 func (f fake) Plan(int, int, string) (backend.Plan, error) {
 	if f.planErr != nil {
 		return backend.Plan{}, f.planErr
@@ -315,5 +318,39 @@ func TestTheReadmeDocumentsEveryExitCode(t *testing.T) {
 	if rows != len(codes) {
 		t.Errorf("the README's table has %d exit codes and this program returns %d",
 			rows, len(codes))
+	}
+}
+
+// The display command is wired to the same backend as the switch, and a dry run
+// builds the power command without touching the monitor. The argument arrays
+// themselves are asserted in internal/backend.
+func TestDisplayDryRunPrintsThePowerCommand(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "odisplay.json")
+	if err := os.WriteFile(path, []byte(`{"version":1,"display":2,"inputs":[{"key":"dp","vcp":15}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ODISPLAY_CONFIG", path)
+
+	var buf bytes.Buffer
+	w := bufio.NewWriter(&buf)
+	code := cmdDisplay(context.Background(), []string{"off", "--dry-run"}, w, os.Stderr)
+	w.Flush()
+	out := buf.String()
+
+	if code != order.CodeOK {
+		t.Fatalf("code = %d (%s), want %d", code, out, order.CodeOK)
+	}
+	if !strings.Contains(out, "0xd6") || !strings.Contains(out, "--display 2") {
+		t.Errorf("output = %q, want the power command for display 2", out)
+	}
+}
+
+func TestDisplayRefusesAWordThatIsNotOffOrOn(t *testing.T) {
+	var buf bytes.Buffer
+	w := bufio.NewWriter(&buf)
+	code := cmdDisplay(context.Background(), []string{"sideways"}, w, os.Stderr)
+	if code != order.CodeUsage {
+		t.Errorf("code = %d, want %d", code, order.CodeUsage)
 	}
 }

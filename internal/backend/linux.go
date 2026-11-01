@@ -59,6 +59,29 @@ func (Linux) Platform() string { return "linux" }
 // Monitor is ddcutil, which is what moves the display on Linux.
 func (Linux) Monitor() string { return "ddcutil" }
 
+// DisplayPower turns the monitor's own power mode off or on over DDC/CI.
+//
+// It is not this machine's suspend: the computer, its sessions and anything
+// reading its framebuffer keep running. Only the panel goes dark. That is the
+// difference between this and `power sleep`, which suspends the machine.
+//
+// Off is D6 value 4 rather than 5. Both are advertised as an off, but 4 answers
+// a read and 5 is write-only on the monitors that have it, so only 4 leaves a
+// state the monitor can be read out of and told to come back from.
+func (Linux) DisplayPower(display int, on bool) (Step, error) {
+	if display < 1 {
+		return Step{}, fmt.Errorf("display %d is not a display number: it must be 1 or more", display)
+	}
+	value := vcpPowerOff
+	if on {
+		value = vcpPowerOn
+	}
+	return Step{
+		Bin:  ddcutil,
+		Args: []string{"setvcp", hexVCP(vcpPowerMode), hexVCP(value), "--display", strconv.Itoa(display)},
+	}, nil
+}
+
 // Plan builds the steps. The monitor is always first.
 func (l Linux) Plan(display, vcp int, channel string) (Plan, error) {
 	if err := validVCP(vcp); err != nil {
